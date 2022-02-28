@@ -1,0 +1,52 @@
+.program clock
+; 
+; So we have two output pins, MDC and MDIO.
+;
+; This is greatly simplified since we send the 32 1's by sending
+; a zero in the software (pindirs, so 0 means input, which is pulled high)
+;
+; So it simply becomes a shift out/in of data, and clock, so we are
+; down to three instructions, allowing lots for rmii.
+;
+; We can make the clock a side pin...
+.side_set 1 opt
+
+.wrap_target
+    out pindirs, 1
+    in pins, 1          side 1 [1]
+    nop                 side 0
+.wrap
+
+
+% c-sdk {
+static inline void clock_program_init(PIO pio, uint sm, uint offset, uint pin_mdc, uint pin_mdio) {
+    pio_sm_config c = clock_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `mdio pin`
+    // parameter to this function, and the side and 
+    sm_config_set_out_pins(&c, pin_mdio, 1);
+    //sm_config_set_set_pins(&c, pin_mdio, 1);
+    sm_config_set_sideset_pins(&c, pin_mdc);
+    sm_config_set_in_pins(&c, pin_mdio);
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_mdio);
+    pio_gpio_init(pio, pin_mdc);
+
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_mdc, 1, true);        // output
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_mdio, 1, false);      // input
+
+    // Set direction, autopull, and shift sizes
+//    sm_config_set_out_shift(&c, false, false, 32);      // shift left, no autopull, 32 bits
+    sm_config_set_out_shift(&c, false, true, 32);      // shift left, autopull, 32 bits
+    sm_config_set_in_shift(&c, false, true, 32);        // shift left, autopush, 32 bits
+
+    sm_config_set_clkdiv(&c, 10);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

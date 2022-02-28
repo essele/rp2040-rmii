@@ -1,0 +1,81 @@
+.program macrx
+; 
+; So we have three pins: rx0 and rx1 as input, and crs as jmp
+;
+; We are running at 100Mhz, so we have two cycles per clock!
+
+; We first need to wait for crs to be low for two mac cycles (4 clock)
+
+; Wait for a specific clock edge
+
+;wait gpio 21
+;nop
+
+idlewait:
+    jmp pin idlewait [1]
+;    jmp pin idlewait [1]
+
+; Theoretically we now have an idle situation...
+; Now we wait for crs to go high....
+
+crswait:
+    jmp pin highwait [1]
+    jmp crswait [1]
+
+; Now we can look for both pins high
+highwait:
+;    wait gpio 21
+    wait 1 pin 0 [1]
+;    wait gpio 21
+    wait 1 pin 1 [1]
+;    wait gpio 21
+
+start:
+    in pins, 2
+    jmp pin start
+
+    irq wait 0 rel
+
+done:
+    jmp done
+
+
+
+% c-sdk {
+static inline void macrx_program_init(PIO pio, uint sm, uint offset, uint pin_rx0, uint pin_crs) {
+    pio_sm_config c = macrx_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `mdio pin`
+    // parameter to this function, and the side and 
+    //sm_config_set_out_pins(&c, pin_mdio, 1);
+    //sm_config_set_sideset_pins(&c, pin_mdc);
+    sm_config_set_in_pins(&c, pin_rx0);
+    sm_config_set_jmp_pin(&c, pin_crs);
+
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_rx0);
+    pio_gpio_init(pio, pin_rx0+1);
+    pio_gpio_init(pio, pin_crs);
+
+    // Set the pin direction to input at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_rx0, 2, false);        // input
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_crs, 1, false);      // input
+
+    // Set direction, autopull, and shift sizes
+    //sm_config_set_out_shift(&c, false, false, 32);      // shift left, no autopull, 32 bits
+    sm_config_set_in_shift(&c, true, true, 8);        // shift right, autopush, 8 bits
+
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    //sm_config_set_clkdiv(&c, 1);
+
+    pio_interrupt_clear(pio, sm);
+    pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, true);
+
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+//    pio_sm_set_enabled(pio, sm, true);
+}
+%}
