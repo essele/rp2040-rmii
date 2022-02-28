@@ -11,6 +11,7 @@
 #include "clock.pio.h"
 #include "macrx.pio.h"
 
+#include "mdio.h"
 
 const uint LED_PIN = 25;
 
@@ -81,10 +82,15 @@ void my_clocks_init(void) {
                     100 * MHZ);
 }
 
+int rx_dma_chan;
 
 uint8_t rx_frame[2048];
 
+#define RX_DMA_LENGTH         1200
+
 volatile int flag = 0;
+
+
 
 void isr()
 {
@@ -96,35 +102,15 @@ void isr()
     flag = 1;
 }
 
-uint16_t mmio_read(PIO pio, uint sm, int addr, int reg) {
-    uint32_t op = (1 << 30) | (2 << 28) | (addr << 23) | (reg << 18) | (0b11 << 16) | 0xffff;
-    uint32_t rc;
-
-    pio_sm_put_blocking(pio, sm, 0);        // Send all ones...
-    pio_sm_put_blocking(pio, sm, ~op);      // Send the code (inverted because it's pindirs)
-    pio_sm_get_blocking(pio, sm);           // Read the dummy value
-    rc = pio_sm_get_blocking(pio, sm);
-    printf("Read r=%d (op: %08x) (rb: %08x)\r\n", reg, op, rc);
-    return (rc & 0xffff);
+void dma_isr() {
+    dma_channel_acknowledge_irq0(rx_dma_chan);
+    printf("DMA OVERRUN");
 }
-
-
-void mmio_write(PIO pio, uint sm, int addr, int reg, uint16_t value) {
-    uint32_t op = (1 << 30) | (1 << 28) | (addr << 23) | (reg << 18) | (0b10 << 16) | value;
-    uint32_t rc;
-    pio_sm_put_blocking(pio, sm, 0);        // Send all ones...
-    pio_sm_put_blocking(pio, sm, ~op);      // Send the code (inverted because it's pindirs)
-    pio_sm_get_blocking(pio, sm);           // Read the dummy value
-    rc = pio_sm_get_blocking(pio, sm);
-    printf("Write r=%d (op: %08x) (rb: %08x)\r\n", reg, op, rc);
-}
-
 
 int main() {
     my_clocks_init();
 
     stdio_init_all();
-
 
 
     gpio_init(LED_PIN);
@@ -140,34 +126,29 @@ int main() {
     uint offset;
     uint sm;
 
-    
+/*    
     offset = pio_add_program(pio, &clock_program);
     sm = pio_claim_unused_sm(pio, true);
 
     gpio_put(19, 0);            // drive a 0 always
-    clock_program_init(pio, sm, offset, 18, 19);        // will start
-
-    
+    mmio_program_init(pio, sm, offset, 18, 19);        // will start
+*/
+    mdio_init(18, 19);  
 
     sleep_ms(200);
 
     // Try to get it to autoneg at 100MBPS
-    #define MMIO_BASIC_CONTROL          0
-    #define MMIO_BASIC_STATUS           1
-    #define MMIO_AUTONEG                4
 
     uint32_t rc;
 
-    mmio_read(pio, sm, 1, MMIO_BASIC_CONTROL);
-    mmio_read(pio, sm, 1, MMIO_AUTONEG);
-    mmio_write(pio, sm, 1, MMIO_BASIC_CONTROL, 0x1200);
-    mmio_read(pio, sm, 1, MMIO_BASIC_CONTROL);
+    mmio_read(1, MMIO_BASIC_CONTROL);
+    mmio_read(1, MMIO_AUTONEG);
+    mmio_write(1, MMIO_BASIC_CONTROL, 0x1200);
+    mmio_read(1, MMIO_BASIC_CONTROL);
 
     for(int i=0; i < 10; i++) {
         // Get status...
-        //pio_sm_put_blocking(pio, sm, MMIO_GET_BASIC_STATUS);
-        //rc = pio_sm_get_blocking(pio, sm);
-        rc = mmio_read(pio, sm, 1, MMIO_BASIC_STATUS);
+        rc = mmio_read(1, MMIO_BASIC_STATUS);
         printf("Status Value -- %08x\r\n", rc);
         sleep_ms(200);
     }
@@ -183,29 +164,40 @@ int main() {
     offset = pio_add_program(pio, &macrx_program);
     sm = pio_claim_unused_sm(pio, true);
 
-    //gpio_disable_pulls(26);
-    //gpio_disable_pulls(27);
-    //gpio_disable_pulls(28);
+    // We need pull downs enabled on the rx pins, I assume this is to ensure it
+    // gets back to 0 quickly enough.
+    // TODO: actually this may not be a problem, I suspect this is more about
+    //       the power-on defaults and having different settings. (Not sure how
+    //       the device actually does a reset during debugging though.)
+//    gpio_disable_pulls(26);
+//    gpio_disable_pulls(27);
+//    gpio_disable_pulls(28);
     gpio_pull_down(26);
     gpio_pull_down(27);
     gpio_pull_down(28);
 
     // this one doesn't start it...
     macrx_program_init(pio, sm, offset, 26, 28);    // rx0=26, rx1=27, csr=28
-    pio_sm_set_enabled(pio, sm, true);
 
-    /*
-    for(int x=0; x < 100; x++) {
-        uint32_t v = pio_sm_get_blocking(pio, sm);
-        printf("value(%d) = %08x\r\n", x, v);
-    }
-    */
 
-    int rx_dma_chan;
+    // We have a DMA complete interrupt which will signal if we overrun a buffer
+    // Normally it won't complete, the PIO interrupt is the signal the packet
+    // is done, and we abort DMA at that point.
+    //
+    // If DMA overruns then we need to stop and restart the PIO.
+    // If PIO finishes, we just need to lower the IRQ it will be waiting on.
+
     dma_channel_config rx_dma_channel_config;
 
     rx_dma_chan = dma_claim_unused_channel(true);
     rx_dma_channel_config = dma_channel_get_default_config(rx_dma_chan);
+
+    irq_set_exclusive_handler(DMA_IRQ_0, dma_isr);
+    irq_set_enabled(DMA_IRQ_0, true);
+    dma_irqn_set_channel_enabled(0, rx_dma_chan, true);
+
+
+
         
     channel_config_set_read_increment(&rx_dma_channel_config, false);
     channel_config_set_write_increment(&rx_dma_channel_config, true);
@@ -216,7 +208,7 @@ int main() {
         rx_dma_chan, &rx_dma_channel_config,
         rx_frame,
         ((uint8_t*)&pio->rxf[sm]) + 3,
-        2048,
+        RX_DMA_LENGTH,
         false
     );
 
@@ -238,9 +230,15 @@ int main() {
                 now = time_us_64();
             }
         }
-        while(!flag);       // wait for the flag
+        //while(!flag);       // wait for the flag
         //flag = 0;
+        printf("About to abort: ");
         dma_channel_abort(rx_dma_chan);
+        for(int i=0; i < 10; i++) {
+            printf(".");
+            sleep_us(10);
+        }
+        printf("\r\n");
         pio_sm_set_enabled(pio, sm, false);
 
         uint32_t rxaddr = hw->write_addr;
@@ -261,7 +259,7 @@ int main() {
             rx_dma_chan, &rx_dma_channel_config,
             rx_frame,
             ((uint8_t*)&pio->rxf[sm]) + 3,
-            2048,
+            RX_DMA_LENGTH,
             false
         );
         dma_sniffer_enable(rx_dma_chan, 0x1, true);

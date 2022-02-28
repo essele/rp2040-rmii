@@ -1,4 +1,4 @@
-.program clock
+.program mdio
 ; 
 ; So we have two output pins, MDC and MDIO.
 ;
@@ -19,13 +19,13 @@
 
 
 % c-sdk {
-static inline void clock_program_init(PIO pio, uint sm, uint offset, uint pin_mdc, uint pin_mdio) {
-    pio_sm_config c = clock_program_get_default_config(offset);
+static inline void mdio_program_init(PIO pio, uint sm, uint offset, uint pin_mdc, uint pin_mdio) {
+    pio_sm_config c = mdio_program_get_default_config(offset);
 
     // Map the state machine's OUT pin group to one pin, namely the `mdio pin`
     // parameter to this function, and the side and 
     sm_config_set_out_pins(&c, pin_mdio, 1);
-    //sm_config_set_set_pins(&c, pin_mdio, 1);
+    sm_config_set_set_pins(&c, pin_mdio, 1);
     sm_config_set_sideset_pins(&c, pin_mdc);
     sm_config_set_in_pins(&c, pin_mdio);
 
@@ -37,12 +37,14 @@ static inline void clock_program_init(PIO pio, uint sm, uint offset, uint pin_md
     pio_sm_set_consecutive_pindirs(pio, sm, pin_mdc, 1, true);        // output
     pio_sm_set_consecutive_pindirs(pio, sm, pin_mdio, 1, false);      // input
 
+    // Set the mdio pin to be outputing a zero (so it pulls down when an output)
+    pio_sm_set_pins(pio, sm, 0);
+
     // Set direction, autopull, and shift sizes
-//    sm_config_set_out_shift(&c, false, false, 32);      // shift left, no autopull, 32 bits
     sm_config_set_out_shift(&c, false, true, 32);      // shift left, autopull, 32 bits
     sm_config_set_in_shift(&c, false, true, 32);        // shift left, autopush, 32 bits
 
-    sm_config_set_clkdiv(&c, 10);
+    sm_config_set_clkdiv(&c, 10);                   // 100Mhz down to 10Mhz (then 4 cycles per bit) = 2.5MHz
 
     // Load our configuration, and jump to the start of the program
     pio_sm_init(pio, sm, offset, &c);
