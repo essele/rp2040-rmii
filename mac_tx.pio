@@ -1,4 +1,4 @@
-.program mactx
+.program mac_tx
 ; 
 ; So we have three pins: tx0 and tx1 as data outputs, and also
 ; we need to set txen high if we have any data to send.
@@ -36,8 +36,8 @@ waitloop:
 
 
 % c-sdk {
-static inline void mactx_program_init(PIO pio, uint sm, uint offset, uint pin_tx0, uint pin_txen) {
-    pio_sm_config c = mactx_program_get_default_config(offset);
+static inline void mac_tx_program_init(PIO pio, uint sm, uint offset, uint pin_tx0, uint pin_txen) {
+    pio_sm_config c = mac_tx_program_get_default_config(offset);
 
     // Map the state machine's OUT pin group to the two output pins 
     sm_config_set_out_pins(&c, pin_tx0, 2);
