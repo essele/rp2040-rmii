@@ -11,7 +11,9 @@ pico_sdk_init()
 
 add_executable(rp2040_rmii
     main.c
-    mdio.c mdio.h
+    mdio.c mdio.h mdio.pio.h mdio.pio
+    macrx.pio.h macrx.pio
+    mactx.pio.h mactx.pio
 )
 
 #pico_enable_stdio_usb(rp2040_rmii 1)
@@ -20,6 +22,7 @@ pico_add_extra_outputs(rp2040_rmii)
 
 pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mdio.pio)
 pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/macrx.pio)
+pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mactx.pio)
 
 target_compile_definitions(rp2040_rmii PRIVATE
   PICO_DEFAULT_UART_TX_PIN=16

@@ -10,6 +10,7 @@
 #include "hardware/irq.h"
 #include "clock.pio.h"
 #include "macrx.pio.h"
+#include "mactx.pio.h"
 
 #include "mdio.h"
 
@@ -91,7 +92,15 @@ dma_channel_hw_t    *rx_dma_chan_hw;
 int                 rx_dma_chan;
 uint8_t             rx_frame[2048];
 
-#define RX_DMA_LENGTH         1200
+#define RX_DMA_LENGTH         1600
+
+PIO                 tx_pio = pio0;
+uint                tx_sm;
+uint                tx_offset;
+
+dma_channel_hw_t    *tx_dma_chan_hw;
+int                 tx_dma_chan;
+
 
 volatile int flag = 0;
 
@@ -173,12 +182,31 @@ void dma_isr() {
     printf("DMA OVERRUN bytes=%d\r\n", bytes);
 }
 
+static uint32_t g_grc_table[] =
+{
+    0x4DBDF21C, 0x500AE278, 0x76D3D2D4, 0x6B64C2B0,
+    0x3B61B38C, 0x26D6A3E8, 0x000F9344, 0x1DB88320,
+    0xA005713C, 0xBDB26158, 0x9B6B51F4, 0x86DC4190,
+    0xD6D930AC, 0xCB6E20C8, 0xEDB71064, 0xF0000000
+};
+
+uint32_t pkt_generate_fcs( uint8_t* data, int length )
+{
+    uint32_t crc = 0;
+    for( uint32_t i = 0 ; i < length ; i++ )
+    {
+        crc = (crc >> 4) ^ g_grc_table[ ( crc ^ ( data[ i ] >> 0 ) ) & 0x0F ];
+        crc = (crc >> 4) ^ g_grc_table[ ( crc ^ ( data[ i ] >> 4 ) ) & 0x0F ];
+    }
+    return( crc );
+}
+
 int main() {
     my_clocks_init();
 
     stdio_init_all();
-
-
+   
+   
     gpio_init(LED_PIN);
 	gpio_set_dir(LED_PIN, GPIO_OUT);
 
@@ -188,29 +216,60 @@ int main() {
     //gpio_set_slew_rate(21, GPIO_SLEW_RATE_FAST);
     clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS, 10);
 
-    //PIO pio = pio0;
-    //uint offset;
-    //uint sm;
 
-/*    
-    offset = pio_add_program(pio, &clock_program);
-    sm = pio_claim_unused_sm(pio, true);
+    // ------------------------------------
+    // Setup the MDIO system and then configure the device so that
+    // it autonegotiates and advertises all capabilities. The hardware
+    // straps are a little tempermental so it's best to set the values
+    // we want in the registers and then do a software reset.
 
-    gpio_put(19, 0);            // drive a 0 always
-    mmio_program_init(pio, sm, offset, 18, 19);        // will start
-*/
     mdio_init(18, 19);  
 
-    sleep_ms(200);
+    enum {
+        SOFT_RESET = (1 << 15),
+        SPEED_100 = (1 << 13),
+        AUTONEG_EN = (1 << 12),
+        AUTONEG_RESTART = (1 << 9),
+        FULL_DUPLEX = (1 << 8),
+    } basic_config;
 
-    // Try to get it to autoneg at 100MBPS
+    enum {
+        FD100 = (1 << 8),
+        HD100 = (1 << 7),       // not exactly sure this is what the datasheet means
+        FD10 = (1 << 6),
+        HD10 = (1 << 5),
+        SELECTOR = (0b00001),
+    } autoneg_adv;
 
-    uint32_t rc;
+    enum {
+        RESERVED = (1 << 14),
+        ALL_CAPABLE = (0b111 << 5),
+        ADDRESS1 = 0x1,
+    } special_modes;
 
+    uint32_t    rc;
+    uint        vendor, model, revision;
+
+    // First lets identify the PHY we are connected to...
+    rc = mmio_read(1, MMIO_PHY_ID2);
+    vendor = rc >> 10;
+    model = rc >> 4 & 0b111111;
+    revision = rc & 0b1111;
+
+    printf("Vendor: %d, Model: %d, Revision: %d\r\n", vendor, model, revision);
+
+    // For the LAN8720 we want to force the mode by setting the SPECIAL_MODES
+    // register and then soft resetting ... this will get us full autoneg.
+    mmio_write(1, MMIO_SPECIAL_MODES, RESERVED|ALL_CAPABLE|ADDRESS1);
+    mmio_write(1, MMIO_BASIC_CONTROL, SOFT_RESET); 
+
+    // We don't seem to need any delay after a soft reset, but probably worth
+    // doing anyway, just in case...
+    sleep_us(50);
+
+    // Not needed, just so we can see the values (remove)
     mmio_read(1, MMIO_BASIC_CONTROL);
-    mmio_read(1, MMIO_AUTONEG);
-    mmio_write(1, MMIO_BASIC_CONTROL, 0x1200);
-    mmio_read(1, MMIO_BASIC_CONTROL);
+    mmio_read(1, MMIO_AUTONEG_ADV);
 
     for(int i=0; i < 10; i++) {
         // Get status...
@@ -222,25 +281,125 @@ int main() {
 
     sleep_ms(500);
 
+    //
+    // Setup the TX state machine
+    //
+    tx_offset = pio_add_program(tx_pio, &mactx_program);
+    tx_sm = pio_claim_unused_sm(tx_pio, true);
+
+    mactx_program_init(tx_pio, tx_sm, tx_offset, 13, 15);     // tx0=13, tx1=14, txen=15
+    pio_sm_set_enabled(tx_pio, tx_sm, true);
 
 
+    uint8_t packet[] = {
+        0x00, 0x00, 0x00, 0x00,             // FOr number of dibits
+        0x00, 0x00, 0x00, 0x00,             // For number of padding bytes
+
+        0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5,     // preamble
+
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05,           // destination
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15,           // source
+        0x08, 0x00,                                   // ethernet type
+        0x45, 0x00,                                   // ip & flags
+        0x00, 0x54,                                   // total length (84)
+        0x00, 0x00,
+        0x40, 0x00,                                     // fragment offset?
+        0x40, 0x01,                                 // ttl64, icmp
+        0x2f, 0xcb,                                 // header checksum
+        0x0a, 0x37, 0x01, 0xfe,                     // source address
+        0x0a, 0x37, 0x01, 0xfd,                     // destination
+        0x08, 0x00, 0x76, 0x22,                     // ping, zero, checksum
+        0x00, 0x06, 0x00, 0x01,                     // id seqency
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,     // timestamp
+
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x00, 0x00, 0x00, 0x00,                         // spaxce for checksum
+    };
+
+    // First build the number of dibits and padding
+    int dibits = (sizeof(packet) - 8) * 4;
+    int extra = (sizeof(packet) - 8) % 4;
+    int padding = 0;
+    if (extra) {
+        padding = 4 - extra;
+    }
+
+    // Now work out how many transfers...
+    int xfers = sizeof(packet)/4;
+    if (extra) {
+        xfers++;
+    }
+
+    // Update the packet with the data...
+    uint32_t *p = (uint32_t *)&packet;
+    p[0] = dibits;
+    p[1] = padding;
+
+    // Now work out the fcs ... this is from the start of the real packet, but not including the
+    // fcs bytes
+    int fcs_len = sizeof(packet) - (8 + 8 + 4);     // remove control words, preamble, and fcs
+    uint32_t fcs = pkt_generate_fcs(&packet[16], fcs_len);
+
+    int fcs_pos = sizeof(packet) - 4;
+
+    printf("fcs=%08x\r\n", fcs);
+    packet[fcs_pos++] = (uint8_t)(fcs >> 0);
+    packet[fcs_pos++] = (uint8_t)(fcs >> 8);
+    packet[fcs_pos++] = (uint8_t)(fcs >> 16);
+    packet[fcs_pos++] = (uint8_t)(fcs >> 24);
+
+
+    dma_channel_config tx_dma_channel_config;
+    tx_dma_chan = dma_claim_unused_channel(true);
+    tx_dma_channel_config = dma_channel_get_default_config(tx_dma_chan);
+    tx_dma_chan_hw = dma_channel_hw_addr(tx_dma_chan);
+        
+    channel_config_set_read_increment(&tx_dma_channel_config, true);
+    channel_config_set_write_increment(&tx_dma_channel_config, false);
+    channel_config_set_dreq(&tx_dma_channel_config, pio_get_dreq(tx_pio, tx_sm, true));
+    channel_config_set_transfer_data_size(&tx_dma_channel_config, DMA_SIZE_32);
+
+    while(1) {
+        dma_channel_configure(
+            tx_dma_chan, &tx_dma_channel_config,
+            &rx_pio->txf[tx_sm],
+            packet,
+            xfers,
+            false
+        );
+
+        // Now send the sizes to the state machine
+        //pio_sm_put_blocking(tx_pio, tx_sm, len * 4);      // how many bit pairs
+        //pio_sm_put_blocking(tx_pio, tx_sm, padding);
+
+        // Now trigger the dma and wait for it to complete....
+        dma_channel_start(tx_dma_chan);
+
+        while(dma_channel_is_busy(tx_dma_chan)) {
+            printf("Busy\r\n");
+            sleep_ms(200);
+
+        }
+        printf("Not busy any more\r\n");
+        // Check sm pc...
+        int pc = pio_sm_get_pc(tx_pio, tx_sm);
+        printf("Started at %d, now at %d\r\n",tx_offset, pc);
+        sleep_ms(500);
+    }
+
+    while(1);
     //
     // Now the RX side
     //
     rx_offset = pio_add_program(rx_pio, &macrx_program);
     rx_sm = pio_claim_unused_sm(rx_pio, true);
 
-    // We need pull downs enabled on the rx pins, I assume this is to ensure it
-    // gets back to 0 quickly enough.
-    // TODO: actually this may not be a problem, I suspect this is more about
-    //       the power-on defaults and having different settings. (Not sure how
-    //       the device actually does a reset during debugging though.)
-//    gpio_disable_pulls(26);
-//    gpio_disable_pulls(27);
-//    gpio_disable_pulls(28);
-    gpio_pull_down(26);
-    gpio_pull_down(27);
-    gpio_pull_down(28);
+
 
     // this one doesn't start it...
     macrx_program_init(rx_pio, rx_sm, rx_offset, 26, 28);    // rx0=26, rx1=27, csr=28

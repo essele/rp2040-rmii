@@ -1,0 +1,69 @@
+.program mactx
+; 
+; So we have three pins: tx0 and tx1 as data outputs, and also
+; we need to set txen high if we have any data to send.
+;
+; Because we need to know if we have data we'll send the number of
+; bitpairs through as the first 32bit value, then the number of
+; bytes of padding (since we operate at 32bits wide.)
+;
+; Finally we'll loop so we ensure an interpacket delay.
+;
+
+.side_set 1 opt
+
+.wrap_target
+    out x, 32                   ; number of bit pairs
+    out y, 32                   ; padding bytes
+
+output:
+    out pins, 2 side 1          ; data out and txen (side) high
+    jmp x-- output              ; loop for x dibits
+    set pins, 0 side 0          ; take everything low
+
+    jmp y-- padding
+    jmp done
+
+padding:
+    out null, 8                 ; otherwise discard
+    jmp y-- padding                 ; and loop
+
+done:
+    set x, 24                   ; 24x8 = 2x96 (100Mhz)
+waitloop:
+    jmp x-- waitloop [7]
+.wrap
+
+
+% c-sdk {
+static inline void mactx_program_init(PIO pio, uint sm, uint offset, uint pin_tx0, uint pin_txen) {
+    pio_sm_config c = mactx_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to the two output pins 
+    sm_config_set_out_pins(&c, pin_tx0, 2);
+    sm_config_set_set_pins(&c, pin_tx0, 2);
+
+    // txen is a side set pin...
+    sm_config_set_sideset_pins(&c, pin_txen);
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_tx0);
+    pio_gpio_init(pio, pin_tx0+1);
+    pio_gpio_init(pio, pin_txen);
+
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_tx0, 2, true);      // output
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_txen, 1, true);     // output
+
+    // Set direction, autopull, and shift sizes
+    sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
+
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    //sm_config_set_clkdiv(&c, 1);
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+//    pio_sm_set_enabled(pio, sm, true);
+}
+%}
