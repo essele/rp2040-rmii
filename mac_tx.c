@@ -86,7 +86,6 @@ uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t current_crc )
 }
 
 
-
 void mac_tx_init(uint pin_tx0, uint pin_txen) {
     //
     // Setup the preamble data in the outgoing packet, this will
@@ -171,89 +170,28 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
         printf("done.\r\n");
         sleep_ms(500);
     }
+}
 
 /**
-    // First build the number of dibits and padding
-    int dibits = (sizeof(packet) - 8) * 4;
-    int extra = (sizeof(packet) - 8) % 4;
-    int padding = 0;
-    if (extra) {
-        padding = 4 - extra;
-    }
-
-    // Now work out how many transfers...
-    int xfers = sizeof(packet)/4;
-    if (extra) {
-        xfers++;
-    }
-
-    // Update the packet with the data...
-    uint32_t *p = (uint32_t *)&packet;
-    p[0] = dibits;
-    p[1] = padding;
-
-    // Now work out the fcs ... this is from the start of the real packet, but not including the
-    // fcs bytes
-    int fcs_len = sizeof(packet) - (8 + 8 + 4);     // remove control words, preamble, and fcs
-    uint32_t fcs = pkt_generate_fcs(&packet[16], fcs_len, 0);
-
-    int fcs_pos = sizeof(packet) - 4;
-
-    printf("fcs=%08x\r\n", fcs);
-    packet[fcs_pos++] = (uint8_t)(fcs >> 0);
-    packet[fcs_pos++] = (uint8_t)(fcs >> 8);
-    packet[fcs_pos++] = (uint8_t)(fcs >> 16);
-    packet[fcs_pos++] = (uint8_t)(fcs >> 24);
-
-
-    dma_channel_config tx_dma_channel_config;
-    tx_dma_chan = dma_claim_unused_channel(true);
-    tx_dma_channel_config = dma_channel_get_default_config(tx_dma_chan);
-    tx_dma_chan_hw = dma_channel_hw_addr(tx_dma_chan);
-        
-    channel_config_set_read_increment(&tx_dma_channel_config, true);
-    channel_config_set_write_increment(&tx_dma_channel_config, false);
-    channel_config_set_dreq(&tx_dma_channel_config, pio_get_dreq(tx_pio, tx_sm, true));
-    channel_config_set_transfer_data_size(&tx_dma_channel_config, DMA_SIZE_32);
-
-    while(1) {
-        dma_channel_configure(
-            tx_dma_chan, &tx_dma_channel_config,
-            &tx_pio->txf[tx_sm],
-            packet,
-            xfers,
-            false
-        );
-
-        // Now send the sizes to the state machine
-        //pio_sm_put_blocking(tx_pio, tx_sm, len * 4);      // how many bit pairs
-        //pio_sm_put_blocking(tx_pio, tx_sm, padding);
-
-        // Now trigger the dma and wait for it to complete....
-        dma_channel_start(tx_dma_chan);
-
-        while(dma_channel_is_busy(tx_dma_chan)) {
-            printf("Busy\r\n");
-            sleep_ms(200);
-
-        }
-        printf("Not busy any more\r\n");
-        // Check sm pc...
-        int pc = pio_sm_get_pc(tx_pio, tx_sm);
-        printf("Started at %d, now at %d\r\n",tx_offset, pc);
-        sleep_ms(500);
-    }
-
-    while(1);
-**/
-
+ * @brief Remove everything TX so we can reconfigure
+ * 
+ * This stops and removes the DMA channels, stops and unloads the
+ * state machine. This is so that we can reload it with different
+ * versions as we re-negotiate 10/100/half/full.
+ * 
+ * Anything in flight will be aborted .. there are no IRQ's on the
+ * TX side, so this shouldn't have any side effects.
+ */
+void mac_tx_teardown() {
+    // TODO
 }
+
 
 /**
  * @brief Send an ethernet frame (without preamble or fcs, this will add them)
  * 
  * Once the previous send is complete, this copies the data into the outgoing 
- * buffer, calculates the FCS, 
+ * buffer, calculates the FCS, and sends to the PIO state machine.
  * @param data 
  * @param length 
  */
@@ -292,11 +230,7 @@ void mac_tx_send(uint8_t *data, uint length) {
     while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
 
     // Now check to ensure the previous packet send has completed...
-    //while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
-    while(dma_channel_is_busy(tx_dma_chan)) {
-        printf("TXBUSY -- offset=%d pc=%d\r\n", tx_offset, pio_sm_get_pc(tx_pio, tx_sm));
-        sleep_ms(200);
-    }
+    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
 
     // Now start the main dma...
     dma_channel_set_read_addr(tx_dma_chan, &outgoing, false);

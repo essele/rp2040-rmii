@@ -14,6 +14,7 @@ add_executable(rp2040_rmii
     mdio.c mdio.h mdio.pio.h mdio.pio
     macrx.pio.h macrx.pio
     mac_tx.c mac_tx.h mac_tx.pio.h mac_tx.pio
+    checksum.c checksum.h
 )
 
 #pico_enable_stdio_usb(rp2040_rmii 1)
@@ -35,4 +36,5 @@ target_link_libraries(rp2040_rmii
   pico_stdlib 
   hardware_pio
   hardware_dma
+  hardware_interp
   )
