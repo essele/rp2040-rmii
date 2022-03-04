@@ -97,10 +97,11 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
     //
     // Setup and start the TX state machine
     //
-    tx_offset = pio_add_program(tx_pio, &mac_tx_program);
+//    tx_offset = pio_add_program(tx_pio, &mac_tx_program);
     tx_sm = pio_claim_unused_sm(tx_pio, true);
+    mac_tx_load(tx_pio, tx_sm, pin_tx0, pin_txen, 100);
 
-    mac_tx_program_init(tx_pio, tx_sm, tx_offset, pin_tx0, pin_txen);    
+//    mac_tx_program_init(tx_pio, tx_sm, tx_offset, pin_tx0, pin_txen);    
     pio_sm_set_enabled(tx_pio, tx_sm, true);
 
     //

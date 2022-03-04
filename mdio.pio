@@ -10,12 +10,12 @@
 ;
 ; We can make the clock a side pin...
 .side_set 1 opt
-
 .wrap_target
     out pindirs, 1
     in pins, 1          side 1 [1]
     nop                 side 0
 .wrap
+
 
 
 % c-sdk {
@@ -44,7 +44,11 @@ static inline void mdio_program_init(PIO pio, uint sm, uint offset, uint pin_mdc
     sm_config_set_out_shift(&c, false, true, 32);      // shift left, autopull, 32 bits
     sm_config_set_in_shift(&c, false, true, 32);        // shift left, autopush, 32 bits
 
-    sm_config_set_clkdiv(&c, 10);                   // 100Mhz down to 10Mhz (then 4 cycles per bit) = 2.5MHz
+    // At full speed (2.5Mhz) we get some spurious issues where reads fail
+    // it's fine if you slow it down slightly...
+    // Ideal would be /10 (100Mhz down to 10Mhz, then 4 cycles per bit = 2.5Mz)
+    // But we use /12 (which results in 2.08Mhz)
+    sm_config_set_clkdiv(&c, 12); 
 
     // Load our configuration, and jump to the start of the program
     pio_sm_init(pio, sm, offset, &c);

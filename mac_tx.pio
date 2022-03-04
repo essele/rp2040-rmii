@@ -36,7 +36,50 @@ waitloop:
 
 
 % c-sdk {
-static inline void mac_tx_program_init(PIO pio, uint sm, uint offset, uint pin_tx0, uint pin_txen) {
+//
+// Different way of doing this ... load the program into the PIO, do the configuration
+// don't actually start it, keep the offset (so we can unload it again.)
+//
+static uint tx_offset;
+
+static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, int speed) {
+    pio_sm_config c;
+
+    tx_offset = pio_add_program(pio, &mac_tx_program);
+    c = mac_tx_program_get_default_config(tx_offset);
+
+    // Map the state machine's OUT pin group to the two output pins 
+    sm_config_set_out_pins(&c, pin_tx0, 2);
+    sm_config_set_set_pins(&c, pin_tx0, 2);
+
+    // txen is a side set pin...
+    sm_config_set_sideset_pins(&c, pin_txen);
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_tx0);
+    pio_gpio_init(pio, pin_tx0+1);
+    pio_gpio_init(pio, pin_txen);
+
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_tx0, 2, true);      // output
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_txen, 1, true);     // output
+
+    // Set direction, autopull, and shift sizes
+    sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
+
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_clkdiv(&c, (speed == 10 ? 10 : 1));
+
+    // Load our configuration, and get ready to start...
+    pio_sm_init(pio, sm, tx_offset, &c);
+}
+
+static inline void mac_rx_unload(PIO pio, uint sm) {
+    pio_sm_set_enabled(pio, sm, false);
+    pio_remove_program(pio, &mac_tx_program, tx_offset);
+}
+
+static inline void XXmac_tx_program_init(PIO pio, uint sm, uint offset, uint pin_tx0, uint pin_txen) {
     pio_sm_config c = mac_tx_program_get_default_config(offset);
 
     // Map the state machine's OUT pin group to the two output pins 

@@ -263,6 +263,7 @@ void dma_isr() {
 
 
 
+
 int main() {
     my_clocks_init();
 
@@ -286,59 +287,6 @@ int main() {
     // we want in the registers and then do a software reset.
 
     mdio_init(18, 19);  
-
-    enum {
-        SOFT_RESET = (1 << 15),
-        SPEED_100 = (1 << 13),
-        AUTONEG_EN = (1 << 12),
-        AUTONEG_RESTART = (1 << 9),
-        FULL_DUPLEX = (1 << 8),
-    } basic_config;
-
-    enum {
-        FD100 = (1 << 8),
-        HD100 = (1 << 7),       // not exactly sure this is what the datasheet means
-        FD10 = (1 << 6),
-        HD10 = (1 << 5),
-        SELECTOR = (0b00001),
-    } autoneg_adv;
-
-    enum {
-        RESERVED = (1 << 14),
-        ALL_CAPABLE = (0b111 << 5),
-        ADDRESS1 = 0x1,
-    } special_modes;
-
-    uint32_t    rc;
-    uint        vendor, model, revision;
-
-    // First lets identify the PHY we are connected to...
-    rc = mmio_read(1, MMIO_PHY_ID2);
-    vendor = rc >> 10;
-    model = rc >> 4 & 0b111111;
-    revision = rc & 0b1111;
-
-    printf("Vendor: %d, Model: %d, Revision: %d\r\n", vendor, model, revision);
-
-    // For the LAN8720 we want to force the mode by setting the SPECIAL_MODES
-    // register and then soft resetting ... this will get us full autoneg.
-    mmio_write(1, MMIO_SPECIAL_MODES, RESERVED|ALL_CAPABLE|ADDRESS1);
-    mmio_write(1, MMIO_BASIC_CONTROL, SOFT_RESET); 
-
-    // We don't seem to need any delay after a soft reset, but probably worth
-    // doing anyway, just in case...
-    sleep_us(50);
-
-    // Not needed, just so we can see the values (remove)
-    mmio_read(1, MMIO_BASIC_CONTROL);
-    mmio_read(1, MMIO_AUTONEG_ADV);
-
-    for(int i=0; i < 10; i++) {
-        // Get status...
-        rc = mmio_read(1, MMIO_BASIC_STATUS);
-        printf("Status Value -- %08x\r\n", rc);
-        sleep_ms(200);
-    }
 
 
     sleep_ms(500);
@@ -403,6 +351,8 @@ int main() {
     irq_set_exclusive_handler(PIO0_IRQ_0, pio_rx_isr);
     irq_set_enabled(PIO0_IRQ_0, true);
 
+    printf("NOT RXING\r\n");
+    while(1);
 
     dma_channel_start(rx_dma_chan);
     pio_sm_set_enabled(rx_pio, rx_sm, true);
@@ -410,7 +360,7 @@ int main() {
     // Now send 100 packets...
     for (int i=0; i < 100; i++) {
         sleep_ms(100);
-        mac_tx_test();
+       // mac_tx_test();
     }
     while(1);
 

@@ -83,7 +83,7 @@ done:
 // Different way of doing this ... load the program into the PIO, do the configuration
 // don't actually start it, keep the offset (so we can unload it again.)
 //
-static int rx_offset;
+static uint rx_offset;
 pio_program_t *rx_prog;
 
 static inline int mac_rx_load(PIO pio, uint sm, uint pin_rx0, uint pin_crs, int speed) {
@@ -131,41 +131,4 @@ static inline void mac_rx_unload(PIO pio, uint sm) {
     pio_remove_program(pio, rx_prog, rx_offset);
 }
 
-
-static inline void XXmacrx_program_init(PIO pio, uint sm, uint offset, uint pin_rx0, uint pin_crs) {
-    pio_sm_config c = mac_rx_10_program_get_default_config(offset);
-
-    // Map the state machine's OUT pin group to one pin, namely the `mdio pin`
-    // parameter to this function, and the side and 
-    //sm_config_set_out_pins(&c, pin_mdio, 1);
-    //sm_config_set_sideset_pins(&c, pin_mdc);
-    sm_config_set_in_pins(&c, pin_rx0);
-    sm_config_set_jmp_pin(&c, pin_crs);
-
-
-    // Set this pin's GPIO function (connect PIO to the pad)
-    pio_gpio_init(pio, pin_rx0);
-    pio_gpio_init(pio, pin_rx0+1);
-    pio_gpio_init(pio, pin_crs);
-
-    // Set the pin direction to input at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_rx0, 2, false);        // input
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_crs, 1, false);      // input
-
-    // Set direction, autopull, and shift sizes
-    //sm_config_set_out_shift(&c, false, false, 32);      // shift left, no autopull, 32 bits
-    sm_config_set_in_shift(&c, true, true, 8);        // shift right, autopush, 8 bits
-
-    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
-//    sm_config_set_clkdiv(&c, 5);
-
-    pio_interrupt_clear(pio, sm);
-    pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, true);
-
-
-    // Load our configuration, and jump to the start of the program
-    pio_sm_init(pio, sm, offset, &c);
-    // Set the state machine running
-//    pio_sm_set_enabled(pio, sm, true);
-}
 %}
