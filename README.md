@@ -10,13 +10,13 @@ This is very much work-in-progress and will develop over time, currently working
 - 10BASE-T send and receive, both half & full duplex
 - PIO based mdio interface
 - Link state & speed monitoring
+- Automatic switching of PIO code on 10/100 speed change
 - Incoming packets checksummed using DMA snooping
 - Additional IP checksum module using INTERP0 (25% faster than LWIP versions)
 
 Still to do:
 
 - LWIP integration
-- Switching of PIO code on speed change
 - Support for 150MHz clocking
 - Option to drop IRQ's and dedicate a core to this
 
