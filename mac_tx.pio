@@ -74,7 +74,7 @@ static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, int
     pio_sm_init(pio, sm, tx_offset, &c);
 }
 
-static inline void mac_rx_unload(PIO pio, uint sm) {
+static inline void mac_tx_unload(PIO pio, uint sm) {
     pio_sm_set_enabled(pio, sm, false);
     pio_remove_program(pio, &mac_tx_program, tx_offset);
 }

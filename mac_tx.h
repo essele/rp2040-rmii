@@ -13,3 +13,6 @@ void mac_tx_init(uint pin_tx0, uint pin_txen);
 void mac_tx_teardown();
 void mac_tx_send(uint8_t *data, uint length);
 void mac_tx_test();
+
+void mac_tx_up(int speed);
+void mac_tx_down();

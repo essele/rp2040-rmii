@@ -19,6 +19,9 @@
 
 #include "mac_tx.h"
 
+static uint                tx_pin_tx0;
+static uint                tx_pin_txen;
+
 static PIO                 tx_pio = pio0;
 static uint                tx_sm;
 static uint                tx_offset;
@@ -85,8 +88,36 @@ uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t current_crc )
     return( crc );
 }
 
+/**
+ * @brief Setup DMA and state machine in reponse to the interface coming up
+ * 
+ * @param speed 
+ */
+void mac_tx_up(int speed) {
+    //
+    // Setup and start the TX state machine
+    //
+    mac_tx_load(tx_pio, tx_sm, tx_pin_tx0, tx_pin_txen, speed);
+    pio_sm_set_enabled(tx_pio, tx_sm, true);
+}
+
+/**
+ * @brief Tear everything down as the interface has gone down
+ * 
+ */
+void mac_tx_down() {
+    // Abort any inflight DMA, stop and remove code from the SM
+    dma_channel_abort(tx_dma_chan);
+    mac_tx_unload(tx_pio, tx_sm);
+}
 
 void mac_tx_init(uint pin_tx0, uint pin_txen) {
+    //
+    // Keep the pin details
+    //
+    tx_pin_tx0 = pin_tx0;
+    tx_pin_txen = pin_txen;
+
     //
     // Setup the preamble data in the outgoing packet, this will
     // stay constant.
@@ -97,12 +128,9 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
     //
     // Setup and start the TX state machine
     //
-//    tx_offset = pio_add_program(tx_pio, &mac_tx_program);
     tx_sm = pio_claim_unused_sm(tx_pio, true);
-    mac_tx_load(tx_pio, tx_sm, pin_tx0, pin_txen, 100);
-
-//    mac_tx_program_init(tx_pio, tx_sm, tx_offset, pin_tx0, pin_txen);    
-    pio_sm_set_enabled(tx_pio, tx_sm, true);
+//    mac_tx_load(tx_pio, tx_sm, pin_tx0, pin_txen, 100);
+//    pio_sm_set_enabled(tx_pio, tx_sm, true);
 
     //
     // Setup the DMA channel for copying data around, addresses will be
@@ -129,11 +157,6 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
     channel_config_set_dreq(&tx_dma_channel_config, pio_get_dreq(tx_pio, tx_sm, true));
     channel_config_set_transfer_data_size(&tx_dma_channel_config, DMA_SIZE_32);
     dma_channel_configure(tx_dma_chan, &tx_dma_channel_config, &tx_pio->txf[tx_sm], 0, 0, false);
-
-
-    return;
-
-
 }
 
 

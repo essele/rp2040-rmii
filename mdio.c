@@ -22,6 +22,9 @@
 #include "mdio.h"
 #include "mdio.pio.h"
 
+#include "mac_tx.h"
+#include "mac_rx.h"
+
 static PIO     mdio_pio = pio0;
 static int     mdio_sm;
 static int     mdio_addr;
@@ -29,15 +32,18 @@ static int     mdio_addr;
 #define MDIO_LOW_PRIORITY_IRQ       30              // Avoid the stdio_usb one
 #define MDIO_TASK_INTERVAL_US       10000           // 10ms should be fine
 
-static char *modes[8] = {
-    "Link down", 
-    "10BASE-T half duplex", 
-    "100BASE-TX half duplex", 
-    "Unknown Mode",
-    "Unknown Mode",
-    "10BASE-T full duplex", 
-    "100BASE-TX full duplex", 
-    "Unknown Mode", 
+static struct {
+    int speed;
+    char *description;
+} modes[8] = {
+    { 0,    "Link down" },
+    { 10,   "10BASE-T half duplex" },
+    { 100,  "100BASE-TX half duplex" },
+    { 0,    "Unknown Mode" },
+    { 0,    "Unknown Mode" },
+    { 10,   "10BASE-T full duplex" },
+    { 100,  "100BASE-TX full duplex" },
+    { 0,    "Unknown Mode" },
 };
 
 enum {
@@ -136,12 +142,21 @@ static void mdio_isr() {
             uint16_t sp = mdio_read(mdio_addr, MDIO_SPECIAL_STATUS);
             printf("SPECIAL=%04x\r\n", sp);
             int mode = (sp & SPEED) >> 2;
-            printf("Mode is: %s\r\n", modes[mode]);
+            printf("Mode is: %s\r\n", modes[mode].description);
 
             int new_link_status = !!(rval & LINK_STATUS);
             if (new_link_status != link_status) {
                 link_status = new_link_status;
                 printf("Link status now: %d\r\n", link_status);
+
+                if (link_status) {
+                    mac_tx_up(modes[mode].speed);
+                    mac_rx_up(modes[mode].speed);
+                } else {
+                    mac_tx_down();
+                    mac_rx_down();
+                }
+
             }
         }
         x = pio_sm_get_rx_fifo_level(mdio_pio, mdio_sm);
