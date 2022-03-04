@@ -130,9 +130,14 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
     dma_channel_configure(tx_dma_chan, &tx_dma_channel_config, &tx_pio->txf[tx_sm], 0, 0, false);
 
 
+    return;
 
 
-    uint8_t packet[] = {
+}
+
+
+void mac_tx_test() {
+        uint8_t packet[] = {
 //        0x00, 0x00, 0x00, 0x00,             // FOr number of dibits
 //        0x00, 0x00, 0x00, 0x00,             // For number of padding bytes
 
@@ -162,14 +167,8 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
 //        0x00, 0x00, 0x00, 0x00,                         // spaxce for checksum
     };
 
-    // Now try sending it in a look...
-    while(1) {
-
-        printf("Sending ... ");
-        mac_tx_send(packet, sizeof(packet));
-        printf("done.\r\n");
-        sleep_ms(500);
-    }
+    printf("Sending ... ");
+    mac_tx_send(packet, sizeof(packet));
 }
 
 /**

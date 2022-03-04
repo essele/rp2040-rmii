@@ -12,7 +12,7 @@ pico_sdk_init()
 add_executable(rp2040_rmii
     main.c
     mdio.c mdio.h mdio.pio.h mdio.pio
-    macrx.pio.h macrx.pio
+    mac_rx.pio.h mac_rx.pio
     mac_tx.c mac_tx.h mac_tx.pio.h mac_tx.pio
     checksum.c checksum.h
 )
@@ -22,7 +22,7 @@ add_executable(rp2040_rmii
 pico_add_extra_outputs(rp2040_rmii)
 
 pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mdio.pio)
-pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/macrx.pio)
+pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mac_rx.pio)
 pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
 
 target_compile_definitions(rp2040_rmii PRIVATE
@@ -37,4 +37,5 @@ target_link_libraries(rp2040_rmii
   hardware_pio
   hardware_dma
   hardware_interp
+  hardware_sync
   )
