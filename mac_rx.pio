@@ -4,7 +4,12 @@
 ; We are running at 100Mhz, so we have two cycles per clock!
 ; We first need to wait for crs to be low for two mac cycles (4 clock)
 idlewait:
-    jmp pin idlewait [1]
+    jmp pin idlewait
+    jmp pin idlewait
+    jmp pin idlewait
+    jmp pin idlewait
+
+
 ;    jmp pin idlewait [1]
 
 ; Theoretically we now have an idle situation...
@@ -27,11 +32,6 @@ start:
     in pins, 2
     jmp pin start
     irq wait 0 rel
-
-; This works for 100M
-;    in pins, 2
-;    jmp pin start
-;    irq wait 0 rel
 
 done:
     jmp done

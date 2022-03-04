@@ -149,6 +149,9 @@ static void mdio_isr() {
                 link_status = new_link_status;
                 printf("Link status now: %d\r\n", link_status);
 
+// Lots of tidying to do here ... do we just monitor the special status register
+// it seems to do the right thing!
+
                 if (link_status) {
                     mac_tx_up(modes[mode].speed);
                     mac_rx_up(modes[mode].speed);

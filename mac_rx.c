@@ -99,6 +99,15 @@ void rx_add_to_free_list(struct rx_frame *frame) {
     rx_free_list = frame;
     restore_interrupts(irq_save);
 }
+/**
+ * @brief As per rx_add_to_free_list but for use in the ISR
+ * 
+ * @param frame 
+ */
+static inline void rx_add_to_free_list_noirq(struct rx_frame *frame) {
+    frame->next = rx_free_list;
+    rx_free_list = frame;
+}
 
 
 
@@ -163,10 +172,14 @@ void pio_rx_isr() {
     // Now we are nicely running we can do the processing that's less time critical
     if (overrun) {
         printf("BUFFER OVERRUN\r\n");
+        // We haven't used the packet, so no need to return it...
         return;
     }
     if (received->checksum != ETHER_CHECKSUM) {
         printf("CHECKSUM ERROR: %08x\r\n", received->checksum);
+        // We need to return this packet and don't process any further
+        rx_add_to_free_list_noirq(received);
+        return;
     }
     printf("PIO_RX_ISR (size=%d / addr=%08x / fcs=%08x):", received->length, received, received->checksum);
     for (int i=0; i < 16; i++) {
@@ -174,7 +187,7 @@ void pio_rx_isr() {
     }
     printf("\r\n");
     // Plonk the packet back for now...
-    rx_add_to_free_list(received);
+    rx_add_to_free_list_noirq(received);
 }
 
 //
@@ -233,8 +246,7 @@ void mac_rx_down() {
 
     // We will have a packet being filled so we'll need to return
     // that to the free pool
-    rx_current->next = rx_free_list;
-    rx_free_list = rx_current;
+    rx_add_to_free_list_noirq(rx_current);
     rx_current = NULL;          // cause an error if we do something stupid!
 
     restore_interrupts(save);

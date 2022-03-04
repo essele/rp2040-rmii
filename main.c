@@ -104,24 +104,16 @@ int main() {
     clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS, 10);
 
 
-    // ------------------------------------
-    // Setup the MDIO system and then configure the device so that
-    // it autonegotiates and advertises all capabilities. The hardware
-    // straps are a little tempermental so it's best to set the values
-    // we want in the registers and then do a software reset.
+    // Initialise the TX and RX modules...
+    mac_tx_init(13, 15);     // tx0=13, tx1=14, txen=15
+    mac_rx_init(26, 28);    // rx0=26, rx1=27, crs=28
 
+    // And start MDIO, monitor link status and speed, and load the
+    // relevant tx and rx PIO modules as needed...
     mdio_init(18, 19);  
 
 
-    sleep_ms(500);
-
-
-    mac_tx_init(13, 15);     // tx0=13, tx1=14, txen=15
-
-    mac_rx_init(26, 28);    // rx0=26, rx1=27, crs=28
-
-
-    printf("NOT RXING\r\n");
+    printf("Init complete.\r\n");
     while(1);
 
 

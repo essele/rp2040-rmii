@@ -77,7 +77,7 @@ static uint32_t g_grc_table[] =
  * @param current_crc
  * @return uint32_t 
  */
-uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t current_crc )
+static inline uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t current_crc )
 {
     uint32_t crc = current_crc;
     for( uint32_t i = 0 ; i < length ; i++ )
@@ -109,6 +109,11 @@ void mac_tx_down() {
     // Abort any inflight DMA, stop and remove code from the SM
     dma_channel_abort(tx_dma_chan);
     mac_tx_unload(tx_pio, tx_sm);
+
+    // TODO: we could be in the middle of copying a packet
+    // in which case we'll try to trigger the DMA again even
+    // if the link is down.
+    // Need to think about how we deal with this.
 }
 
 void mac_tx_init(uint pin_tx0, uint pin_txen) {
@@ -129,8 +134,6 @@ void mac_tx_init(uint pin_tx0, uint pin_txen) {
     // Setup and start the TX state machine
     //
     tx_sm = pio_claim_unused_sm(tx_pio, true);
-//    mac_tx_load(tx_pio, tx_sm, pin_tx0, pin_txen, 100);
-//    pio_sm_set_enabled(tx_pio, tx_sm, true);
 
     //
     // Setup the DMA channel for copying data around, addresses will be
@@ -196,21 +199,6 @@ void mac_tx_test() {
 }
 
 /**
- * @brief Remove everything TX so we can reconfigure
- * 
- * This stops and removes the DMA channels, stops and unloads the
- * state machine. This is so that we can reload it with different
- * versions as we re-negotiate 10/100/half/full.
- * 
- * Anything in flight will be aborted .. there are no IRQ's on the
- * TX side, so this shouldn't have any side effects.
- */
-void mac_tx_teardown() {
-    // TODO
-}
-
-
-/**
  * @brief Send an ethernet frame (without preamble or fcs, this will add them)
  * 
  * Once the previous send is complete, this copies the data into the outgoing 
@@ -249,11 +237,14 @@ void mac_tx_send(uint8_t *data, uint length) {
     *ptr++ = (uint8_t)(fcs >> 16);
     *ptr++ = (uint8_t)(fcs >> 24);
 
-    // Now wait for (make sure) the copy DMA to complete...
+    // Now wait for (it will be done) the copy DMA to complete...
     while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
 
     // Now check to ensure the previous packet send has completed...
     while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
+
+    // TODO: potential of the link going down before we get here
+    // so SM will be gone, we shouldn't trigger in that case!
 
     // Now start the main dma...
     dma_channel_set_read_addr(tx_dma_chan, &outgoing, false);
