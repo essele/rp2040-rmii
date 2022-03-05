@@ -5,10 +5,8 @@
 ; We first need to wait for crs to be low for two mac cycles (4 clock)
 .wrap_target
 idlewait:
-    jmp pin idlewait
-    jmp pin idlewait
-    jmp pin idlewait
-    jmp pin idlewait
+    jmp pin idlewait [1]
+    jmp pin idlewait [1]
 
 ; Theoretically we now have an idle situation...
 ; Now we wait for crs to go high....
@@ -32,11 +30,7 @@ start:
     irq wait 0 rel
 
 ; TODO: We randomly end up with spurious data in here at 100meg??
-    set x, 0
-    mov isr, x
-
-;done:
-;    jmp done
+    mov isr, null
 .wrap
 
 
@@ -47,11 +41,11 @@ start:
 ;
 ; So we have three pins: rx0 and rx1 as input, and crs as jmp
 
-; First wait for CRS to go low... this needs to be for 20 cycles (2 clocks) to
+; First wait for CRS to go low... this needs to be for 40 cycles (4 clocks) to
 ; avoid the toggling at the end of the packet.
 .wrap_target
 idlestart:
-    set x 9
+    set x 19
 idlewait:
     jmp pin idlestart
     jmp x-- idlewait
@@ -65,8 +59,7 @@ crswait:
 ; us inside the next data cycle by a couple of clocks
 highwait:
     wait 1 pin 0
-    wait 1 pin 1
-    nop [25]
+    wait 1 pin 1 [26]
 
 ; We can ready the first dibit in the first 20 cycles, then the second dibit
 ; as well as sampling CRS to check for the end of the packet
@@ -78,11 +71,7 @@ start:
 
 ; TODO: We end up with spurious data in here at 10meg, so I suspect the previous
 ; check isn't quite right?
-    set x, 0
-    mov isr, x
-
-;done:
-;    jmp done
+    mov isr, null
 .wrap
 
 

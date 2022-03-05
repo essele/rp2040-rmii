@@ -34,16 +34,17 @@ static int     mdio_addr;
 
 static struct {
     int speed;
+    int duplex;             // 0 = half, 1 = full   
     char *description;
 } modes[8] = {
-    { 0,    "Link down" },
-    { 10,   "10BASE-T half duplex" },
-    { 100,  "100BASE-TX half duplex" },
-    { 0,    "Unknown Mode" },
-    { 0,    "Unknown Mode" },
-    { 10,   "10BASE-T full duplex" },
-    { 100,  "100BASE-TX full duplex" },
-    { 0,    "Unknown Mode" },
+    { 0,    0,  "Link down" },
+    { 10,   0,  "10BASE-T half duplex" },
+    { 100,  0,  "100BASE-TX half duplex" },
+    { 0,    0,  "Unknown Mode" },
+    { 0,    0,  "Unknown Mode" },
+    { 10,   1,  "10BASE-T full duplex" },
+    { 100,  1,  "100BASE-TX full duplex" },
+    { 0,    0,  "Unknown Mode" },
 };
 
 enum {
@@ -143,6 +144,8 @@ static void mdio_isr() {
             printf("SPECIAL=%04x\r\n", sp);
             int mode = (sp & SPEED) >> 2;
             printf("Mode is: %s\r\n", modes[mode].description);
+            int speed = modes[mode].speed;
+            int duplex = modes[mode].duplex;
 
             int new_link_status = !!(rval & LINK_STATUS);
             if (new_link_status != link_status) {
@@ -153,8 +156,8 @@ static void mdio_isr() {
 // it seems to do the right thing!
 
                 if (link_status) {
-                    mac_tx_up(modes[mode].speed);
-                    mac_rx_up(modes[mode].speed);
+                    mac_tx_up(speed, duplex);
+                    mac_rx_up(speed);
                 } else {
                     mac_tx_down();
                     mac_rx_down();

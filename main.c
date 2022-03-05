@@ -85,10 +85,6 @@ void my_clocks_init(void) {
                     100 * MHZ);
 }
 
-
-
-
-
 int main() {
     my_clocks_init();
 
@@ -105,8 +101,8 @@ int main() {
 
 
     // Initialise the TX and RX modules...
-    mac_tx_init(13, 15);     // tx0=13, tx1=14, txen=15
-    mac_rx_init(26, 28);    // rx0=26, rx1=27, crs=28
+    mac_tx_init(13, 15, 28);     // tx0=13, tx1=14, txen=15, crs=28
+    mac_rx_init(26, 28);         // rx0=26, rx1=27, crs=28
 
     // And start MDIO, monitor link status and speed, and load the
     // relevant tx and rx PIO modules as needed...
@@ -114,13 +110,13 @@ int main() {
 
 
     printf("Init complete.\r\n");
-    while(1);
+    //while(1);
 
 
     // Now send 100 packets...
     for (int i=0; i < 100; i++) {
         sleep_ms(100);
-       // mac_tx_test();
+        mac_tx_test();
     }
     while(1);
 

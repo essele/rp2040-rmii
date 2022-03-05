@@ -21,6 +21,7 @@
 
 static uint                tx_pin_tx0;
 static uint                tx_pin_txen;
+static uint                tx_pin_crs;          // for carrier detection
 
 static PIO                 tx_pio = pio0;
 static uint                tx_sm;
@@ -93,11 +94,11 @@ static inline uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t cur
  * 
  * @param speed 
  */
-void mac_tx_up(int speed) {
+void mac_tx_up(int speed, int duplex) {
     //
     // Setup and start the TX state machine
     //
-    mac_tx_load(tx_pio, tx_sm, tx_pin_tx0, tx_pin_txen, speed);
+    mac_tx_load(tx_pio, tx_sm, tx_pin_tx0, tx_pin_txen, tx_pin_crs, speed, duplex);
     pio_sm_set_enabled(tx_pio, tx_sm, true);
 }
 
@@ -116,12 +117,13 @@ void mac_tx_down() {
     // Need to think about how we deal with this.
 }
 
-void mac_tx_init(uint pin_tx0, uint pin_txen) {
+void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
     //
     // Keep the pin details
     //
     tx_pin_tx0 = pin_tx0;
     tx_pin_txen = pin_txen;
+    tx_pin_crs = pin_crs;
 
     //
     // Setup the preamble data in the outgoing packet, this will
@@ -209,6 +211,14 @@ void mac_tx_test() {
 void mac_tx_send(uint8_t *data, uint length) {
     uint32_t fcs = 0;
 
+    // If the state machine isn't enabled then the link is down
+    // (Note this could change while we're in here!)
+    if (!(tx_pio->ctrl & (1 << tx_sm))) {
+        printf("SM down, discarding\r\n");
+        return;
+    }
+
+
     // DMA the data over so we can start on the fcs...
     dma_channel_set_read_addr(tx_copy_chan, data, false);
     dma_channel_set_write_addr(tx_copy_chan, outgoing.data, false);
@@ -244,7 +254,8 @@ void mac_tx_send(uint8_t *data, uint length) {
     while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
 
     // TODO: potential of the link going down before we get here
-    // so SM will be gone, we shouldn't trigger in that case!
+    // so SM will be gone, we shouldn't trigger in that case a it
+    // will never complete.
 
     // Now start the main dma...
     dma_channel_set_read_addr(tx_dma_chan, &outgoing, false);

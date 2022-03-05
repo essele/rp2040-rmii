@@ -1,4 +1,48 @@
-.program mac_tx
+.program mac_tx_hd
+; 
+; So we have three pins: tx0 and tx1 as data outputs, and also
+; we need to set txen high if we have any data to send.
+;
+; Because we need to know if we have data we'll send the number of
+; bitpairs through as the first 32bit value, then the number of
+; bytes of padding (since we operate at 32bits wide.)
+;
+; For half duplex we should check crs to ensure it's been low for
+; at least 96 cycles before we try and send.
+
+.side_set 1 opt
+idle_start:
+    set x, 22
+idle_wait:
+    jmp pin, idle_start [1]               ; if crs goes high we start again
+    jmp x--, idle_wait [1]                ; count down for 23 (92 cycles)
+
+data_wait:
+    jmp pin, idle_start                   ; if crs goes high start again
+    mov x, !status
+    jmp !x, data_wait                     ; loop if nothing in fifo 
+
+.wrap_target
+    out x, 32                   ; number of bit pairs
+    out y, 32                   ; padding bytes
+
+output:
+    out pins, 2 side 1          ; data out and txen (side) high
+    jmp x-- output              ; loop for x dibits
+    set pins, 0 side 0          ; take everything low
+
+    jmp y-- padding
+    jmp done
+
+padding:
+    out null, 8                 ; otherwise discard
+    jmp y-- padding                 ; and loop
+
+done:
+    nop
+.wrap
+
+.program mac_tx_fd
 ; 
 ; So we have three pins: tx0 and tx1 as data outputs, and also
 ; we need to set txen high if we have any data to send.
@@ -41,16 +85,25 @@ waitloop:
 // don't actually start it, keep the offset (so we can unload it again.)
 //
 static uint tx_offset;
+pio_program_t *tx_prog;
 
-static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, int speed) {
+static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uint pin_crs, int speed, int duplex) {
     pio_sm_config c;
 
-    tx_offset = pio_add_program(pio, &mac_tx_program);
-    c = mac_tx_program_get_default_config(tx_offset);
+    if (duplex) {
+        tx_prog = (pio_program_t *)&mac_tx_fd_program;
+        tx_offset = pio_add_program(pio, tx_prog);
+        c = mac_tx_fd_program_get_default_config(tx_offset);
+    } else {
+        tx_prog = (pio_program_t *)&mac_tx_hd_program;
+        tx_offset = pio_add_program(pio, tx_prog);
+        c = mac_tx_hd_program_get_default_config(tx_offset);
+    }
 
     // Map the state machine's OUT pin group to the two output pins 
     sm_config_set_out_pins(&c, pin_tx0, 2);
     sm_config_set_set_pins(&c, pin_tx0, 2);
+    sm_config_set_jmp_pin(&c, pin_crs);
 
     // txen is a side set pin...
     sm_config_set_sideset_pins(&c, pin_txen);
@@ -67,6 +120,10 @@ static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, int
     // Set direction, autopull, and shift sizes
     sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
 
+    // We want to be able to check when the FIFO has anything in it
+    // So TX < 1 means STATUS will be all 1's when the fifo is empty
+    sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
+
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
     sm_config_set_clkdiv(&c, (speed == 10 ? 10 : 1));
 
@@ -76,7 +133,7 @@ static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, int
 
 static inline void mac_tx_unload(PIO pio, uint sm) {
     pio_sm_set_enabled(pio, sm, false);
-    pio_remove_program(pio, &mac_tx_program, tx_offset);
+    pio_remove_program(pio, tx_prog, tx_offset);
 }
 
 
