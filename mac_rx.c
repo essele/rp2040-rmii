@@ -28,12 +28,11 @@ uint                rx_sm;                 // State machine for RX
 
 dma_channel_hw_t    *rx_dma_chan_hw;
 int                 rx_dma_chan;
-uint8_t             rx_frame[2048];
-
 
 volatile int flag = 0;
 
 #define RX_FRAME_COUNT  8
+//#define RX_MAX_BYTES    1446              // for testing large packet handling
 #define RX_MAX_BYTES    1600
 #define ETHER_CHECKSUM  0xc704dd7b
 
@@ -121,7 +120,11 @@ static inline void rx_add_to_free_list_noirq(struct rx_frame *frame) {
 // which we need to clear, we should also avoid creating one by aborting
 // the dma.
 //
-// Suggestion: before aborting the dma turn off the DMA irq.
+// NOTE: if a packet is only just over the maximum it's possible this
+// isr will get called before the DMA one, in which case we will know
+// because of the length. The DMR IRQ will be cleared so we don't need
+// to worry about that.
+//
 //
 void pio_rx_isr() {
     int         overrun = 0;
@@ -133,14 +136,8 @@ void pio_rx_isr() {
     // Now abort the DMA channel... (this won't wait for outstanding xfers)
     dma_hw->abort = 1u << rx_dma_chan;
 
-    // Stop the state machine...
-    pio_sm_set_enabled(rx_pio, rx_sm, false);
-
-    // Clear SM IRQ (irq0 rel)
-    pio_interrupt_clear(pio0, rx_sm + 0);
-
     // Wait for abort to complete (I've never seen any looping here, it's already done)
-    while (dma_hw->abort & (1ul << rx_dma_chan)) tight_loop_contents();
+    while (dma_hw->ch[rx_dma_chan].ctrl_trig & DMA_CH0_CTRL_TRIG_BUSY_BITS) tight_loop_contents();
 
     // Immediately find a new frame for the next incoming packet, we can process this one
     // after everything is back up and running... if we don't have a free one then we just
@@ -162,12 +159,11 @@ void pio_rx_isr() {
     dma_channel_set_irq0_enabled(rx_dma_chan, true);
     dma_hw->sniff_data = 0xffffffff;
 
+    // Clear any pending DMA IRQ that could have been caused by a perfect match overrun
+    irq_clear(DMA_IRQ_0);
 
-    // Start SM (jmp to offset)
-    pio_sm_restart(rx_pio, rx_sm);
-    pio_sm_clkdiv_restart(rx_pio, rx_sm);
-    pio_sm_exec(rx_pio, rx_sm, pio_encode_jmp(rx_offset));
-    pio_sm_set_enabled(rx_pio, rx_sm, true);
+    // Restart the state machine by clearing the IRQ
+    pio_interrupt_clear(pio0, rx_sm + 0);
 
     // Now we are nicely running we can do the processing that's less time critical
     if (overrun) {
@@ -175,8 +171,15 @@ void pio_rx_isr() {
         // We haven't used the packet, so no need to return it...
         return;
     }
+    // Catch the case of a large packet that hasn't tripped the DMA overrun check
+    // TODO: this should be a define...
+    if (received->length >= 1536) {
+        printf("LARGE PACKET\r\n");
+        rx_add_to_free_list_noirq(received);
+        return;
+    }
     if (received->checksum != ETHER_CHECKSUM) {
-        printf("CHECKSUM ERROR: %08x\r\n", received->checksum);
+        printf("CHECKSUM ERROR: %08x (length=%d)\r\n", received->checksum, received->length);
         // We need to return this packet and don't process any further
         rx_add_to_free_list_noirq(received);
         return;
@@ -193,21 +196,46 @@ void pio_rx_isr() {
 //
 // We should only get a dma IRQ now if we have overrun the size limit, however
 // there is the possiblity that the SM finishes while we are in here and
-// pre-empts us ... 
-// disable_irqs(); set PIO irq flags; enable_irqs();
-//
-// Does that fix the problem?
+// pre-empts us ... we should be able to tell that by looking if DMA is still
+// busy.
 //
 void dma_isr() {
-    // Is it easier to just trigger a PIO irq?
-    // Either by setting the flag manually or by executing a
-    // command on the SM? Need to think.
-    dma_channel_hw_t *hw = dma_channel_hw_addr(rx_dma_chan);
+    uint32_t save = save_and_disable_interrupts();
+    int type = 0;
 
-    dma_channel_acknowledge_irq0(rx_dma_chan);
+    if (dma_channel_is_busy(rx_dma_chan)) {
+        // This was an overrun, but the SM also finished and that IRQ has been processed and
+        // DMA would have been restarted.
+        // This is probably a bad thing since we may have stuff in the FIFO and DMA
+        // will start transferring...
+        // TODO: I've yet to see this happen ...
+        dma_channel_acknowledge_irq0(rx_dma_chan);
+    } else {
+        // This is just a straightforward overrun of a packet the SM will be running or
+        // blocked trying to put stuff in the FIFO and DMA is stopped, so we need to reset
+        // both things... the SM could also have finished and raised an IRQ while we are
+        // in here, so we need to clear that to.
+        pio_sm_set_enabled(rx_pio, rx_sm, false);       // stop the SM
+        pio_interrupt_clear(pio0, rx_sm + 0);           // not sure if restart does this as well?
+        pio_sm_restart(rx_pio, rx_sm);                  // clear state
+        pio_sm_clear_fifos(rx_pio, rx_sm);
+        pio_sm_exec(rx_pio, rx_sm, pio_encode_jmp(rx_offset));
 
-    uint32_t bytes = (uint32_t)hw->write_addr - (uint32_t)rx_frame;
-    printf("DMA OVERRUN bytes=%d\r\n", bytes);
+        // Now we need to re-establish the DMA and restart on the current packet...
+        dma_channel_acknowledge_irq0(rx_dma_chan);
+        dma_channel_hw_addr(rx_dma_chan)->al2_write_addr_trig = (uintptr_t)rx_current->data;
+        dma_hw->sniff_data = 0xffffffff;
+
+        // Clear any pending PIO irq (if it finished while we were in here)
+        irq_clear(PIO0_IRQ_0);
+
+        // And off we go...
+        pio_sm_set_enabled(rx_pio, rx_sm, true);
+        type = 2;
+    }
+
+    restore_interrupts(save);
+    printf("DMA OVERRUN IRQ: type = %s\r\n", type == 1 ? "AAARRRGH" : "NORMAL");
 }
 
 
