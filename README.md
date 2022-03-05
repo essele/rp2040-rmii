@@ -9,6 +9,7 @@ This is very much work-in-progress and will develop over time, currently working
 - Works with LAN8720
 - 100BASE-TX send and receive, both half & full duplex
 - 10BASE-T send and receive, both half & full duplex
+- TX inter-packet-gap honored for full duplex
 - PIO based mdio interface
 - Link state & speed monitoring
 - Automatic switching of PIO code on 10/100 speed change
@@ -17,6 +18,7 @@ This is very much work-in-progress and will develop over time, currently working
 
 Still to do:
 
+- Half duplex TX carrier detection and inter-packet-gap
 - LWIP integration
 - Support for 150MHz clocking
 - Support for RTL8201 
