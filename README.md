@@ -10,7 +10,9 @@ This is very much work-in-progress and will develop over time, currently working
 - 100BASE-TX send and receive, both half & full duplex
 - 10BASE-T send and receive, both half & full duplex
 - TX inter-packet-gap honored for full duplex
+- Half duplex TX carrier detection and inter-packet-gap
 - PIO based mdio interface
+- Auto detection of phy type and address
 - Link state & speed monitoring
 - Automatic switching of PIO code on 10/100 speed change
 - Incoming packets checksummed using DMA snooping
@@ -18,11 +20,9 @@ This is very much work-in-progress and will develop over time, currently working
 
 Still to do:
 
-- Half duplex TX carrier detection and inter-packet-gap
 - LWIP integration
 - Support for 150MHz clocking
 - Support for RTL8201 
-- Auto detection of phy type and address
 - Option to drop IRQ's and dedicate a core to this
 
 ## Background

@@ -110,13 +110,14 @@ int main() {
 
 
     printf("Init complete.\r\n");
+    sleep_ms(2000);
     //while(1);
 
 
     // Now send 100 packets...
     for (int i=0; i < 100; i++) {
         sleep_ms(100);
-        mac_tx_test();
+        //mac_tx_test();
     }
     while(1);
 

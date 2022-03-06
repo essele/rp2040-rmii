@@ -11,35 +11,27 @@
 ; at least 96 cycles before we try and send.
 
 .side_set 1 opt
+.wrap_target
 idle_start:
     set x, 22
 idle_wait:
-    jmp pin, idle_start [1]               ; if crs goes high we start again
-    jmp x--, idle_wait [1]                ; count down for 23 (92 cycles)
+    jmp pin, idle_start [1]     ; if crs goes high we start again
+    jmp x--, idle_wait [1]      ; count down for 23 (92 cycles)
 
 data_wait:
-    jmp pin, idle_start                   ; if crs goes high start again
+    jmp pin, idle_start         ; if crs goes high start again
     mov x, !status
-    jmp !x, data_wait                     ; loop if nothing in fifo 
+    jmp !x, data_wait           ; loop if nothing in fifo 
 
-.wrap_target
     out x, 32                   ; number of bit pairs
-    out y, 32                   ; padding bytes
 
 output:
     out pins, 2 side 1          ; data out and txen (side) high
     jmp x-- output              ; loop for x dibits
     set pins, 0 side 0          ; take everything low
 
-    jmp y-- padding
-    jmp done
-
-padding:
-    out null, 8                 ; otherwise discard
-    jmp y-- padding                 ; and loop
-
-done:
-    nop
+    mov osr, null               ; throw away anything left
+    out null, 32
 .wrap
 
 .program mac_tx_fd
@@ -51,28 +43,23 @@ done:
 ; bitpairs through as the first 32bit value, then the number of
 ; bytes of padding (since we operate at 32bits wide.)
 ;
-; Finally we'll loop so we ensure an interpacket delay.
+; Finally we'll loop so we ensure an interpacket delay by just
+; waiting once we've finished.
 ;
 
 .side_set 1 opt
 
 .wrap_target
     out x, 32                   ; number of bit pairs
-    out y, 32                   ; padding bytes
 
 output:
     out pins, 2 side 1          ; data out and txen (side) high
     jmp x-- output              ; loop for x dibits
     set pins, 0 side 0          ; take everything low
 
-    jmp y-- padding
-    jmp done
+    mov osr, null               ; throw away anything left
+    out null, 32
 
-padding:
-    out null, 8                 ; otherwise discard
-    jmp y-- padding                 ; and loop
-
-done:
     set x, 24                   ; 24x8 = 2x96 (100Mhz)
 waitloop:
     jmp x-- waitloop [7]
