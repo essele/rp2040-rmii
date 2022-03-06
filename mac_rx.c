@@ -19,6 +19,8 @@
 #include "hardware/sync.h"
 #include "mac_rx.pio.h"
 
+#include "mac_rx.h"
+
 uint                rx_pin_rx0;
 uint                rx_pin_crs;
 
@@ -32,24 +34,18 @@ int                 rx_dma_chan;
 volatile int flag = 0;
 
 #define RX_FRAME_COUNT  8
-//#define RX_MAX_BYTES    1446              // for testing large packet handling
-#define RX_MAX_BYTES    1600
 #define ETHER_CHECKSUM  0xc704dd7b
 
 
 // We need to keep the identification of free frames as quick as possible
 // since it's done in the ISR. So we'll keep a singly linked list, we can
 // easily add and remove from the front.
-struct rx_frame {
-    struct rx_frame     *next;
-    int                 length;
-    int                 checksum;
-    uint8_t             data[RX_MAX_BYTES];
-};
-
 struct rx_frame rx_frames[RX_FRAME_COUNT];
-struct rx_frame *rx_free_list;                  // list of free-to-use frames
-struct rx_frame *rx_current;                    // the one being used
+volatile struct rx_frame *rx_free_list;                  // list of free-to-use frames
+volatile struct rx_frame *rx_current;                    // the one being used
+
+volatile struct rx_frame *rx_ready_list;                 // a list of packets needing to be processed
+volatile struct rx_frame *rx_ready_tail;                 // the last item in the list (so we can add to the end)
 
 void rx_frame_init() {
     int i;
@@ -108,7 +104,34 @@ static inline void rx_add_to_free_list_noirq(struct rx_frame *frame) {
     rx_free_list = frame;
 }
 
+static inline void rx_add_to_ready_list_noirq(struct rx_frame *frame) {
+    frame->next = 0;
 
+    // First deal with the empty case...
+    if (!rx_ready_tail) {
+        rx_ready_list = frame;
+        rx_ready_tail = frame;
+    } else {
+        // At least one is in there, so add to the tail
+        rx_ready_tail->next = frame;
+        rx_ready_tail = frame;
+    }
+}
+
+struct rx_frame *rx_get_ready_frame() {
+    struct rx_frame *rc;
+    uint32_t irq_save = save_and_disable_interrupts();
+    rc = rx_ready_list;
+    if (rc) {
+        rx_ready_list = rx_ready_list->next;
+        if (!rx_ready_list) {
+            rx_ready_tail = 0;
+        }
+        rc->next = 0;
+    }
+    restore_interrupts(irq_save);
+    return(rc);
+}
 
 //
 // This is called when the state machine reaches the end of a packet
@@ -167,7 +190,7 @@ void pio_rx_isr() {
 
     // Now we are nicely running we can do the processing that's less time critical
     if (overrun) {
-        printf("BUFFER OVERRUN\r\n");
+        printf("OUT OF PACKET BUFFERS\r\n");
         // We haven't used the packet, so no need to return it...
         return;
     }
@@ -184,13 +207,13 @@ void pio_rx_isr() {
         rx_add_to_free_list_noirq(received);
         return;
     }
-    printf("PIO_RX_ISR (size=%d / addr=%08x / fcs=%08x):", received->length, received, received->checksum);
-    for (int i=0; i < 16; i++) {
-        printf(" %02x", received->data[i]);
-    }
-    printf("\r\n");
-    // Plonk the packet back for now...
-    rx_add_to_free_list_noirq(received);
+//    printf("PIO_RX_ISR (size=%d / addr=%08x / fcs=%08x):", received->length, received, received->checksum);
+//    for (int i=0; i < 16; i++) {
+//        printf(" %02x", received->data[i]);
+//    }
+//    printf("\r\n");
+    // Now add the packet to the ready list...
+    rx_add_to_ready_list_noirq(received);
 }
 
 //

@@ -235,13 +235,13 @@ void mac_tx_send(uint8_t *data, uint length) {
     //
     // The normal case means the fcs on the source data can start in parallel
     // with the copy, this saves quite a few cycles.
-    if (length < 60) {
-        while (length < 60) outgoing.data[length++] = 0;
-        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
-        fcs = pkt_generate_fcs(outgoing.data, length, fcs);
-    } else {
+//    if (0 && length < 60) {
+//        while (length < 60) outgoing.data[length++] = 0;
+//        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+//        fcs = pkt_generate_fcs(outgoing.data, length, fcs);
+//    } else {
         fcs = pkt_generate_fcs(data, length, fcs);
-    }
+//    }
 
     // Fill in the dibits and work out how many 32bit words it will be
     uint32_t data_bytes = sizeof(outgoing.preamble) + length + 4;   // preamble + data + fcs
@@ -250,7 +250,7 @@ void mac_tx_send(uint8_t *data, uint length) {
     if (data_bytes % 4) {
         dma_size++;
     }
-    outgoing.dibits = data_bytes * 4;
+    outgoing.dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
 
     // Fill in the FCS values
     char *ptr = &outgoing.data[length];
@@ -268,6 +268,9 @@ void mac_tx_send(uint8_t *data, uint length) {
     // TODO: potential of the link going down before we get here
     // so SM will be gone, we shouldn't trigger in that case a it
     // will never complete.
+
+    int outlen = outgoing.dibits/4;
+    uint8_t *p = (uint8_t *)&outgoing;
 
     // Now start the main dma...
     dma_channel_set_read_addr(tx_dma_chan, &outgoing, false);

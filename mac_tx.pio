@@ -52,6 +52,11 @@ output:
 .wrap_target
     out x, 32                   ; number of bit pairs
 
+    ; We need to make sure we are on the right clock edge?
+    ; TODO: this doesn't work at 10Meg speeds, so we need a
+    ; different approach.
+    wait 1 gpio 21              ; Cant do this at 10Meg!
+
 output:
     out pins, 2 side 1          ; data out and txen (side) high
     jmp x-- output              ; loop for x dibits

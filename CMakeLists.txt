@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 include(pico_sdk_import.cmake)
+include(pico_extras_import.cmake)
 
 project(rp2040_rmii_project C CXX ASM)
 set(CMAKE_C_STANDARD 11)
@@ -31,6 +32,8 @@ target_compile_definitions(rp2040_rmii PRIVATE
   PICO_DEFAULT_UART=0
 )
 
+# Make sure we can find lwipopts.h...
+target_include_directories(rp2040_rmii PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 target_link_libraries(rp2040_rmii 
   pico_stdlib 
@@ -38,4 +41,5 @@ target_link_libraries(rp2040_rmii
   hardware_dma
   hardware_interp
   hardware_sync
+  lwip
 )
