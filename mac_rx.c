@@ -335,6 +335,7 @@ void mac_rx_init(uint pin_rx0, uint pin_crs) {
     channel_config_set_dreq(&rx_dma_channel_config, pio_get_dreq(rx_pio, rx_sm, false));
     channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_8);
 
+
     // Dummy configure, so we only have to change write address later...
     dma_channel_configure(
         rx_dma_chan, &rx_dma_channel_config,
@@ -343,6 +344,7 @@ void mac_rx_init(uint pin_rx0, uint pin_crs) {
         RX_MAX_BYTES,
         false
     );
+    rx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
 
     irq_set_exclusive_handler(PIO0_IRQ_0, pio_rx_isr);
     irq_set_enabled(PIO0_IRQ_0, true);

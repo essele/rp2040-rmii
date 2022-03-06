@@ -332,9 +332,12 @@ int main() {
     {
         sleep_us( 1 );
         sys_check_timeouts();
-    
-        rmii_lwip_poll(nif);
 
+#ifndef MDIO_USE_IRQ
+        mdio_poll();
+#endif
+
+        rmii_lwip_poll(nif);
         // show DHCP status
         struct dhcp* dd = netif_dhcp_data(&rmii_netif);
         if(dd->state != prevDHCPState) {

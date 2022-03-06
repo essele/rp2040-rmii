@@ -27,11 +27,11 @@ Still to do:
 
 Current WIP Status:
 
-- LWIP working, DHCP working fine.
+- LWIP working, DHCP working fine. Zero-copy done on RX side.
 - Some checksum and overrun errors when flood pinging
 - Likely IRQ issues caused by timer (reduces when using longer interval)
 - Packet TX needs to be clock aligned (probably need 10/100 versions - or NOP instruction)
-- Copying data for both tx and rx twice at the moment, need to fix
+- Copying data for TX twice at the moment, need to fix
 
 ## Background
 
