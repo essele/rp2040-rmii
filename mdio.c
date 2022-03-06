@@ -28,6 +28,7 @@
 static PIO     mdio_pio = pio0;
 static int     mdio_sm;
 static int     mdio_addr;
+static int     mdio_type;
 
 #define MDIO_LOW_PRIORITY_IRQ       30              // Avoid the stdio_usb one
 #define MDIO_TASK_INTERVAL_US       10000           // 10ms should be fine
@@ -45,6 +46,26 @@ static struct {
     { 10,   1,  "10BASE-T full duplex" },
     { 100,  1,  "100BASE-TX full duplex" },
     { 0,    0,  "Unknown Mode" },
+};
+
+//
+// Variations in the way we interact with the PHY
+//
+#define TYPE_BASIC              0
+#define TYPE_LAN8720            1
+
+struct phy {
+    uint16_t    id2;
+    int         type;
+    char        *description;
+};
+
+// We ignore the lower 4 bits of ID2 since this is a revision number and could
+// change with silicon versions.
+static struct phy phys[] = {
+    { 0xc0f0, TYPE_LAN8720, "Microchip LAN8720" },
+    { 0x0000, TYPE_BASIC,   "Blah Blah Phy" },
+    { 0x0000, 0, NULL }     // end of list
 };
 
 enum {
@@ -122,54 +143,43 @@ static int64_t mdio_timer_task(__unused alarm_id_t id, __unused void *user_data)
 
 // See if we have a response to our previous query and process it. If not just send
 // a new one.
-uint32_t last_rval = 0;
+//
+// We monitor the link status, and then if that changes we use the special status
+// register to work out what's going on (speed/duplex)
 
-int link_status = 0;        // 0 = down
+static uint32_t last_status = 0;
+static int      sm_loaded = 0;
+
+//int link_status = 0;        // 0 = down
 
 
 static void mdio_isr() {
-    uint32_t rval;
-
     if (pio_sm_get_rx_fifo_level(mdio_pio, mdio_sm) > 1) {
-        rval = mdio_get_read_result();
-        int x = pio_sm_get_rx_fifo_level(mdio_pio, mdio_sm);
-        if (x) {
-            printf("Fifo level is %d\r\n", x);
-        }
-        if (rval != last_rval) {
-            printf("Rval changed from %04x to %04x\r\n", last_rval, rval);
-            last_rval = rval;
+        int new_status = !!(mdio_get_read_result() & LINK_STATUS);
 
-            uint16_t sp = mdio_read(mdio_addr, MDIO_SPECIAL_STATUS);
-            printf("SPECIAL=%04x\r\n", sp);
-            int mode = (sp & SPEED) >> 2;
-            printf("Mode is: %s\r\n", modes[mode].description);
-            int speed = modes[mode].speed;
-            int duplex = modes[mode].duplex;
-
-            int new_link_status = !!(rval & LINK_STATUS);
-            if (new_link_status != link_status) {
-                link_status = new_link_status;
-                printf("Link status now: %d\r\n", link_status);
-
-// Lots of tidying to do here ... do we just monitor the special status register
-// it seems to do the right thing!
-
-                if (link_status) {
-                    mac_tx_up(speed, duplex);
-                    mac_rx_up(speed);
-                } else {
+        if (new_status != last_status) {
+            // The link has gone up or down... if down then unload
+            if (!new_status) {
+                printf("Link DOWN\r\n");
+                if (sm_loaded) {
                     mac_tx_down();
                     mac_rx_down();
+                    sm_loaded = 0;
                 }
+            } else {
+                uint mode = (mdio_read(mdio_addr, MDIO_SPECIAL_STATUS) & SPEED) >> 2;
+                int speed = modes[mode].speed;
+                int duplex = modes[mode].duplex;
+                printf("Link UP, %s\r\n", modes[mode].description);
 
+                if (!sm_loaded) {
+                    mac_tx_up(speed, duplex);
+                    mac_rx_up(speed);
+                    sm_loaded = 1;
+                }
             }
+            last_status = new_status;
         }
-        x = pio_sm_get_rx_fifo_level(mdio_pio, mdio_sm);
-        if (x) {
-            printf("B4 send Fifo level is %d\r\n", x);
-        }
-
         mdio_send_read_cmd(mdio_addr, MDIO_BASIC_STATUS);
     }
 }
@@ -196,28 +206,51 @@ int mdio_init(uint pin_mdc, uint pin_mdio) {
     pio_sm_get_blocking(mdio_pio, mdio_sm);
     pio_sm_get_blocking(mdio_pio, mdio_sm);
 
-    // TODO ... detect the mdio address
-    mdio_addr = 1;
-
+    // Now see if we can figure out which address the PHY is on, and which vendor and model
+    // it is.
+    int         i;
     uint32_t    rc;
     uint        vendor, model, revision;
+    for (i=0; i < 32; i++) {
+        rc = mdio_read(i, MDIO_PHY_ID2);
+        if (rc != 0xffff) break;
+    }
+    if (i == 32) {
+        printf("No PHY detected, not starting rmii\r\n");
+        return 0;
+    }
+    mdio_addr = i;
 
-    // First lets identify the PHY we are connected to...
-    rc = mdio_read(mdio_addr, MDIO_PHY_ID2);
     vendor = rc >> 10;
     model = rc >> 4 & 0b111111;
     revision = rc & 0b1111;
 
-    printf("Vendor: %d, Model: %d, Revision: %d\r\n", vendor, model, revision);
+    // Now see if we recognise the phy... ignoring the revision
+    struct phy *p = phys;
+    while (1) {
+        if (p->id2 == 0) {
+            printf("PHY@addr=%d: unknown, using basic capabilities (id2=0x%04x)\r\n", mdio_addr, rc);
+            mdio_type = TYPE_BASIC;
+            break;
+        }
+        if ((p->id2 & 0xfff0) == (rc & 0xfff0)) {
+            printf("PHY@addr=%d: %s (revision %x)\r\n", mdio_addr, p->description, revision);
+            mdio_type = p->type;
+            break;
+        }
+        p++;
+    }
 
     // For the LAN8720 we want to force the mode by setting the SPECIAL_MODES
     // register and then soft resetting ... this will get us full autoneg.
-    mdio_write(mdio_addr, MDIO_SPECIAL_MODES, RESERVED|ALL_CAPABLE|ADDRESS1);
-    mdio_write(mdio_addr, MDIO_BASIC_CONTROL, SOFT_RESET); 
+    if (mdio_type == TYPE_LAN8720) {
+        mdio_write(mdio_addr, MDIO_SPECIAL_MODES, RESERVED|ALL_CAPABLE|ADDRESS1);
+        mdio_write(mdio_addr, MDIO_BASIC_CONTROL, SOFT_RESET); 
 
-    // We don't seem to need any delay after a soft reset, but probably worth
-    // doing anyway, just in case...
-    sleep_us(50);
+        // We don't seem to need any delay after a soft reset, but probably worth
+        // doing anyway, just in case...
+        sleep_us(50);
+    }
 
     // Now setup the ISR and timer
     irq_set_exclusive_handler(MDIO_LOW_PRIORITY_IRQ, mdio_isr);

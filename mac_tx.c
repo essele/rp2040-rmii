@@ -46,12 +46,11 @@ static int                 tx_copy_chan;        // used for copying data around
 // go, we bring it all into one place ... horrible I know, but I can't work
 // out a better way for the moment.
 //
-#define MAX_ETHERNET_BYTES      18 + 1500 + 2  // premable, hdr, payload, crc
+#define MAX_ETHERNET_BYTES      18 + 1500 + 4   // hdr, payload, crc
 
 struct {
     uint32_t    dibits;                         // How many dibits are going
-    uint32_t    padding;                        // How many bytes of padding
-    uint8_t     preamble[8];                     // preamble
+    uint8_t     preamble[8];                    // preamble
     uint8_t     data[MAX_ETHERNET_BYTES];       // hdr, payload, fcs
 } outgoing;
 
@@ -218,27 +217,40 @@ void mac_tx_send(uint8_t *data, uint length) {
         return;
     }
 
+    // If we try to send a packet that's too big just discard it.
+    if (length > MAX_ETHERNET_BYTES) {
+        printf("TX packet too big, discarding\r\n");
+        return;
+    }
 
     // DMA the data over so we can start on the fcs...
     dma_channel_set_read_addr(tx_copy_chan, data, false);
     dma_channel_set_write_addr(tx_copy_chan, outgoing.data, false);
     dma_channel_set_trans_count(tx_copy_chan, length, true);
 
-    // Now (in parallel) work out the fcs... use the source so
-    // we can ultimately support split packets...
-    fcs = pkt_generate_fcs(data, length, fcs);
+    // If the packet is less than 60 bytes we need to expand it, this is
+    // awkward because the source data (where we normally do the fcs) isn't
+    // complete, so we have to fcs on the destination which means waiting for
+    // the transfer to complete ... horrible, but should be rare.
+    //
+    // The normal case means the fcs on the source data can start in parallel
+    // with the copy, this saves quite a few cycles.
+    if (length < 60) {
+        while (length < 60) outgoing.data[length++] = 0;
+        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+        fcs = pkt_generate_fcs(outgoing.data, length, fcs);
+    } else {
+        fcs = pkt_generate_fcs(data, length, fcs);
+    }
 
-    // Fill in the dibits and padding
+    // Fill in the dibits and work out how many 32bit words it will be
     uint32_t data_bytes = sizeof(outgoing.preamble) + length + 4;   // preamble + data + fcs
-    uint extra = data_bytes % 4;
-    uint32_t padding = 0;
-    uint dma_size = (data_bytes / 4) + 2;       // data + 2 x control words
-    if (extra) {
-        padding = 4 - extra;
+    uint dma_size = (data_bytes / 4) + 1;                           // data + length control words
+
+    if (data_bytes % 4) {
         dma_size++;
     }
     outgoing.dibits = data_bytes * 4;
-    outgoing.padding = padding;
 
     // Fill in the FCS values
     char *ptr = &outgoing.data[length];
