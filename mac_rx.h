@@ -11,6 +11,8 @@
 
 //#define RX_MAX_BYTES    1446              // for testing large packet handling
 #define RX_MAX_BYTES    1600
+#define RX_FRAME_COUNT  16
+
 
 struct rx_frame {
     struct rx_frame     *next;

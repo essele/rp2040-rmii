@@ -33,7 +33,6 @@ int                 rx_dma_chan;
 
 volatile int flag = 0;
 
-#define RX_FRAME_COUNT  8
 #define ETHER_CHECKSUM  0xc704dd7b
 
 

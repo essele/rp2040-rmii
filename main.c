@@ -181,6 +181,27 @@ err_t ethernetif_init(struct netif *netif)
   return ERR_OK;
 }
 
+// Custom pbuf structure for holding our rx frames...
+typedef struct rmii_pbuf {
+    struct pbuf_custom  p;
+    struct rx_frame     *frame;
+} rmii_pbuf_t;
+
+// TODO: count should be our buffer count...
+LWIP_MEMPOOL_DECLARE(RX_POOL, RX_FRAME_COUNT, sizeof(rmii_pbuf_t), "Zero-copy RX PBUF pool");
+
+// Custom pbuf freeing routine...
+void rmii_pbuf_free(struct pbuf *p) {
+//  SYS_ARCH_DECL_PROTECT(old_level);
+
+  rmii_pbuf_t* rmii_pbuf = (rmii_pbuf_t*)p;
+  rx_add_to_free_list(rmii_pbuf->frame);
+  LWIP_MEMPOOL_FREE(RX_POOL, rmii_pbuf);
+//  printf("rmii pbuf returned\r\n");
+}
+
+
+
 /**
  * @brief Check for incoming packets and hand them to lwip
  * 
@@ -194,16 +215,36 @@ void rmii_lwip_poll(struct netif* netif) {
     struct rx_frame *frame;
     struct pbuf *p = NULL;
     struct pbuf *q;
+
+    rmii_pbuf_t *cp;
     
     while((frame = rx_get_ready_frame())) {
         // Try to allocate some pbufs for the frame, if not give the frame back and
         // return...
+        /*
         p = pbuf_alloc(PBUF_RAW, frame->length, PBUF_POOL);
         if (!p) {
             rx_add_to_free_list(frame);
             printf("PBUF ALLOCATION FAILED.\r\n");
             return;
         }
+        */
+        cp = (rmii_pbuf_t *)LWIP_MEMPOOL_ALLOC(RX_POOL);
+        if (!cp) {
+            rx_add_to_free_list(frame);
+            printf("PBUF (CUSTOM) allocation failed\r\n");
+            return;
+        }
+        cp->p.custom_free_function = rmii_pbuf_free;
+        cp->frame = frame;
+
+        p = pbuf_alloced_custom(PBUF_RAW, frame->length, PBUF_REF, &cp->p, frame->data, RX_MAX_BYTES);
+        if (!p) {
+            printf("PBUF ERROR\r\n");
+            panic("pbuf failed\r\n");   
+        }
+/*
+
 
         // See if we're working...
     //    printf("MAIN (size=%d / addr=%08x / fcs=%08x):", frame->length, frame, frame->checksum);
@@ -221,7 +262,7 @@ void rmii_lwip_poll(struct netif* netif) {
 
         // We're done with the frame at this point
         rx_add_to_free_list(frame);
-
+*/
         // Update SNMP stats...
         MIB2_STATS_NETIF_ADD(netif, ifinoctets, p->tot_len);
         if (((uint8_t *)p->payload)[0] & 1) {
@@ -269,6 +310,8 @@ int main() {
     struct netif* nif;
 
     lwip_init();
+
+    LWIP_MEMPOOL_INIT(RX_POOL);
 
     // Setup rmii_ethernetif -- this will be passed into the other routines so
     // we can init our one specifically...
