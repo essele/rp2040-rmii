@@ -1,0 +1,36 @@
+.program clock50
+; 
+; So we have two output pins, MDC and MDIO.
+;
+; This is greatly simplified since we send the 32 1's by sending
+; a zero in the software (pindirs, so 0 means input, which is pulled high)
+;
+; So it simply becomes a shift out/in of data, and clock, so we are
+; down to three instructions, allowing lots for rmii.
+;
+; We can make the clock a side pin...
+.wrap_target
+    set pins 1
+    set pins 0
+.wrap
+
+% c-sdk {
+static inline void clock50_program_init(PIO pio, uint sm, uint offset, uint pin_clk) {
+    pio_sm_config c = clock50_program_get_default_config(offset);
+
+    // Map the state machine's OUT pin group to one pin, namely the `mdio pin`
+    // parameter to this function, and the side and 
+    sm_config_set_set_pins(&c, pin_clk, 1);
+
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_clk);
+
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_clk, 1, true);        // output
+
+    // Load our configuration, and jump to the start of the program
+    pio_sm_init(pio, sm, offset, &c);
+    // Set the state machine running
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

@@ -7,13 +7,16 @@
 #include "hardware/pll.h"
 //#include "hardware/pio.h"
 //#include "hardware/dma.h"
-//#include "hardware/irq.h"
+#include "hardware/irq.h"
+#include "hardware/structs/bus_ctrl.h"
 #include "clock.pio.h"
 
 
 #include "mdio.h"
 #include "mac_tx.h"
 #include "mac_rx.h"
+
+#include "clock50.pio.h"
 
 const uint LED_PIN = 25;
 
@@ -292,7 +295,21 @@ int main() {
 
     // If we are running at 500MHz PLL output, then we need a /10 output for
     // the 50MHz PHY clock
-    clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS, 10);
+    //clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS, 10);
+
+    uint clkpin = 21;
+    //gpio_set_drive_strength(clkpin, GPIO_DRIVE_STRENGTH_12MA);
+    //gpio_set_slew_rate(clkpin, GPIO_SLEW_RATE_FAST);
+
+    uint offset;
+    int sm = pio_claim_unused_sm(pio0, true);
+
+    offset = pio_add_program(pio0, &clock50_program);
+    clock50_program_init(pio0, sm, offset, clkpin);
+
+
+    // We prioritise DMA... both read and write...
+    //bus_ctrl_hw->priority |= (1 << 12) | (1 << 8);
 
     // Initialise the TX and RX modules...
     mac_tx_init(13, 15, 28);     // tx0=13, tx1=14, txen=15, crs=28
@@ -302,9 +319,29 @@ int main() {
     // relevant tx and rx PIO modules as needed...
     mdio_init(18, 19);  
 
+
+    // Get int enabled status
+    irq_set_enabled(TIMER_IRQ_3, false);
+    uint32_t irr = *((io_rw_32 *) (PPB_BASE + M0PLUS_NVIC_ISER_OFFSET));
+    printf("IRR=%08x\r\n", irr);
+
     printf("rmii init complete.\r\n");
 
+    uint64_t now = time_us_64();
+    while((now + 3000000) > time_us_64()) {
+        mdio_poll();
+    } 
 
+/*
+    // Let's just send 5000 packets
+//    sleep_ms(3000);
+    printf("Sending 100000 packets\r\n");
+    for(int i=0; i < 100000; i++) {
+        mac_tx_test();
+    }
+    printf("\r\ndone.\r\n");
+    while(1);
+*/
     static struct netif rmii_netif;
     static struct ethernetif rmii_ethernetif;
     struct netif* nif;
@@ -328,9 +365,46 @@ int main() {
 
     uint8_t prevDHCPState;
 
+
+    bus_ctrl_hw->counter[0].sel = arbiter_sram0_perf_event_access_contested;
+    bus_ctrl_hw->counter[1].sel = arbiter_sram1_perf_event_access_contested;
+    bus_ctrl_hw->counter[2].sel = arbiter_sram2_perf_event_access_contested;
+    bus_ctrl_hw->counter[3].sel = arbiter_sram5_perf_event_access_contested;
+//    bus_ctrl_hw->counter[0].sel = arbiter_sram3_perf_event_access_contested;
+//    bus_ctrl_hw->counter[1].sel = arbiter_sram2_perf_event_access_contested;
+//    bus_ctrl_hw->counter[2].sel = arbiter_sram1_perf_event_access_contested;
+//    bus_ctrl_hw->counter[3].sel = arbiter_sram0_perf_event_access_contested;
+    uint64_t last_perf = 0;
+
+    // Sram0 = 001500
+    // seam1 = 000300
+    // sram2 = 000900
+    // sram3 = 000300
+    // sram4 = 000000
+    // sram5 = 005d00 !! ? Why?
+    // fastperi = 0
+    // apb = 0
+    // xip = 0
+
+
     while( true )
     {
-        sleep_us( 1 );
+        
+        uint64_t now = time_us_64();
+        if (now > last_perf + 1000000) {
+            last_perf = now;
+//            printf("COUNTERS: %06x %06x %06x %06x\r\n", bus_ctrl_hw->counter[0].value,
+//                bus_ctrl_hw->counter[1].value, bus_ctrl_hw->counter[2].value,
+//                bus_ctrl_hw->counter[3].value);
+
+//            for (int i=0; i < 4; i++) {
+//                bus_ctrl_hw->counter[i].value = 0;
+            print_rx_stats();
+        }
+    
+        
+
+        //sleep_us( 1 );
         sys_check_timeouts();
 
 #ifndef MDIO_USE_IRQ

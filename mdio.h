@@ -9,7 +9,7 @@
  * 
  */
 
-#define MDIO_USE_IRQ        0
+//#define MDIO_USE_IRQ 1
 
 int mdio_init(uint pin_mdc, uint pin_mdio);
 void mdio_poll();

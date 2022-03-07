@@ -33,8 +33,24 @@ int                 rx_dma_chan;
 
 volatile int flag = 0;
 
-#define ETHER_CHECKSUM  0xc704dd7b
+struct rx_stats {
+    int32_t     packets;
+    int32_t     oob;
+    int32_t     fcs;
+    int32_t     big;
+};
 
+struct rx_stats rxstats;
+
+
+#define ETHER_CHECKSUM0  0xc704dd7b                 // no trailing zeros
+#define ETHER_CHECKSUM1  0x8104c946                 // one trailing zero (-3 on length)
+#define ETHER_CHECKSUM2  0x3a7abc72                 // two trailing zeros (-2 on length)
+#define ETHER_CHECKSUM3  0x4710bb9c                 // three trailing zeros (-1 on length)
+
+void print_rx_stats() {
+    printf("pkts=%d oob=%d fcs=%d big=%d\r\n", rxstats.packets, rxstats.oob, rxstats.fcs, rxstats.big);
+}
 
 // We need to keep the identification of free frames as quick as possible
 // since it's done in the ISR. So we'll keep a singly linked list, we can
@@ -148,7 +164,7 @@ struct rx_frame *rx_get_ready_frame() {
 // to worry about that.
 //
 //
-void pio_rx_isr() {
+void __time_critical_func(pio_rx_isr)() {
     int         overrun = 0;
     uint32_t    checksum;
 
@@ -187,32 +203,68 @@ void pio_rx_isr() {
     // Restart the state machine by clearing the IRQ
     pio_interrupt_clear(pio0, rx_sm + 0);
 
+//    uint32_t fd = pio0_hw->fdebug;
+//    if (fd != 0x05000000) {
+//        printf("FDEBUG: %08x  (rx=%d)\r\n", pio0_hw->fdebug, rx_sm);
+//    }
+//    pio0_hw->fdebug = ~0;
+
     // Now we are nicely running we can do the processing that's less time critical
     if (overrun) {
-        printf("OUT OF PACKET BUFFERS\r\n");
+        rxstats.oob++;
         // We haven't used the packet, so no need to return it...
         return;
     }
-    // Catch the case of a large packet that hasn't tripped the DMA overrun check
-    // TODO: this should be a define...
-    if (received->length >= 1536) {
-        printf("LARGE PACKET\r\n");
-        rx_add_to_free_list_noirq(received);
-        return;
-    }
-    if (received->checksum != ETHER_CHECKSUM) {
-        printf("CHECKSUM ERROR: %08x (length=%d)\r\n", received->checksum, received->length);
+    // Process checksum matching and length adjustment...
+    if (received->checksum == ETHER_CHECKSUM0) {
+    } else if (received->checksum == ETHER_CHECKSUM1) {
+        received->length -= 3;
+    } else if (received->checksum == ETHER_CHECKSUM2) {
+        received->length -= 2;
+    } else if (received->checksum == ETHER_CHECKSUM3) {
+        received->length--;
+    } else {
+        rxstats.fcs++;
+        printf("CHECKSUM ERROR: %08x (length=%d): ", received->checksum, received->length);
+        int i = 0;
+        for (; i < 8; i++) {
+            printf("%02x ", received->data[i]);
+        }
+        printf("... ");
+        i = received->length - 8;
+        for (; i < received->length; i++) {
+            printf("%02x ", received->data[i]);
+        }
+        printf("\r\n");
         // We need to return this packet and don't process any further
         rx_add_to_free_list_noirq(received);
         return;
     }
-//    printf("PIO_RX_ISR (size=%d / addr=%08x / fcs=%08x):", received->length, received, received->checksum);
-//    for (int i=0; i < 16; i++) {
-//        printf(" %02x", received->data[i]);
-//    }
-//    printf("\r\n");
+
+    // Catch the case of a large packet that hasn't tripped the DMA overrun check
+    // TODO: this should be a define...
+    if (received->length >= 1536) {
+        rxstats.big++;
+        rx_add_to_free_list_noirq(received);
+        return;
+    }
+
     // Now add the packet to the ready list...
     rx_add_to_ready_list_noirq(received);
+    rxstats.packets++;
+//    printf("CHECKSUM OK   : %08x (length=%d): ", received->checksum, received->length);
+//    int i = 0;
+//    for (; i < 8; i++) {
+//        printf("%02x ", received->data[i]);
+//    }
+//    printf("... ");
+//    i = received->length - 8;
+//    for (; i < received->length; i++) {
+//        printf("%02x ", received->data[i]);
+//    }
+//    printf("\r\n");
+
+//    printf(".");
 }
 
 //
@@ -269,6 +321,7 @@ void mac_rx_up(int speed) {
     rx_current = first;
 
     dma_sniffer_enable(rx_dma_chan, 0x1, true);
+//    dma_sniffer_set_byte_swap_enabled(true);
     dma_hw->sniff_data = 0xffffffff;
     dma_channel_hw_addr(rx_dma_chan)->al2_write_addr_trig = (uintptr_t)rx_current->data;
     dma_channel_set_irq0_enabled(rx_dma_chan, true);
@@ -333,18 +386,20 @@ void mac_rx_init(uint pin_rx0, uint pin_crs) {
     channel_config_set_read_increment(&rx_dma_channel_config, false);
     channel_config_set_write_increment(&rx_dma_channel_config, true);
     channel_config_set_dreq(&rx_dma_channel_config, pio_get_dreq(rx_pio, rx_sm, false));
-    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_8);
+    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_32);
+//    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_8);
 
 
     // Dummy configure, so we only have to change write address later...
     dma_channel_configure(
         rx_dma_chan, &rx_dma_channel_config,
         NULL,
-        ((uint8_t*)&rx_pio->rxf[rx_sm]) + 3,
-        RX_MAX_BYTES,
+//        ((uint8_t*)&rx_pio->rxf[rx_sm]) + 3,
+        ((uint8_t*)&rx_pio->rxf[rx_sm]),
+        RX_MAX_BYTES / 4,
         false
     );
-    rx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
+    //rx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
 
     irq_set_exclusive_handler(PIO0_IRQ_0, pio_rx_isr);
     irq_set_enabled(PIO0_IRQ_0, true);

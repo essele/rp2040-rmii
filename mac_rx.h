@@ -28,3 +28,5 @@ void mac_rx_down();
 // These will be called by the engine that processes the packets...
 void rx_add_to_free_list(struct rx_frame *frame);
 struct rx_frame *rx_get_ready_frame();
+
+void print_rx_stats();

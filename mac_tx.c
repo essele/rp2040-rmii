@@ -48,12 +48,16 @@ static int                 tx_copy_chan;        // used for copying data around
 //
 #define MAX_ETHERNET_BYTES      18 + 1500 + 4   // hdr, payload, crc
 
-struct {
+struct outgoing_t {
     uint32_t    dibits;                         // How many dibits are going
     uint8_t     preamble[8];                    // preamble
     uint8_t     data[MAX_ETHERNET_BYTES];       // hdr, payload, fcs
-} outgoing;
+};
 
+//struct outgoing_t __scratch_x("sram4_lee") outbufs[2];
+struct outgoing_t outbufs[2];
+struct outgoing_t *outgoing;
+uint              next_outgoing = 0;
 
 // Don't declare this as const, it's probably quicker being
 // in memory rather than flash...
@@ -129,7 +133,9 @@ void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
     // stay constant.
     //
     static uint8_t preamble[8] = { 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5 };
-    memcpy(outgoing.preamble, preamble, 8);
+    for (int i=0; i < 2; i++) {
+        memcpy(outbufs[i].preamble, preamble, 8);
+    }
 
     //
     // Setup and start the TX state machine
@@ -161,11 +167,14 @@ void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
     channel_config_set_dreq(&tx_dma_channel_config, pio_get_dreq(tx_pio, tx_sm, true));
     channel_config_set_transfer_data_size(&tx_dma_channel_config, DMA_SIZE_32);
     dma_channel_configure(tx_dma_chan, &tx_dma_channel_config, &tx_pio->txf[tx_sm], 0, 0, false);
+
+    //tx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
+
 }
 
 
 void mac_tx_test() {
-        uint8_t packet[] = {
+        static uint8_t packet[1200] = {
 //        0x00, 0x00, 0x00, 0x00,             // FOr number of dibits
 //        0x00, 0x00, 0x00, 0x00,             // For number of padding bytes
 
@@ -195,7 +204,7 @@ void mac_tx_test() {
 //        0x00, 0x00, 0x00, 0x00,                         // spaxce for checksum
     };
 
-    printf("Sending ... ");
+    //printf("Sending ... ");
     mac_tx_send(packet, sizeof(packet));
 }
 
@@ -222,10 +231,14 @@ void mac_tx_send(uint8_t *data, uint length) {
         printf("TX packet too big, discarding\r\n");
         return;
     }
+    // We need to copy the packet to the next outgoing buffer (double buffered)
+    // so we don't interfere with the currently transmitting one...
+    outgoing = &outbufs[next_outgoing];
+    next_outgoing ^= 1;                 // toggle
 
     // DMA the data over so we can start on the fcs...
     dma_channel_set_read_addr(tx_copy_chan, data, false);
-    dma_channel_set_write_addr(tx_copy_chan, outgoing.data, false);
+    dma_channel_set_write_addr(tx_copy_chan, outgoing->data, false);
     dma_channel_set_trans_count(tx_copy_chan, length, true);
 
     // If the packet is less than 60 bytes we need to expand it, this is
@@ -244,16 +257,16 @@ void mac_tx_send(uint8_t *data, uint length) {
 //    }
 
     // Fill in the dibits and work out how many 32bit words it will be
-    uint32_t data_bytes = sizeof(outgoing.preamble) + length + 4;   // preamble + data + fcs
+    uint32_t data_bytes = sizeof(outgoing->preamble) + length + 4;   // preamble + data + fcs
     uint dma_size = (data_bytes / 4) + 1;                           // data + length control words
 
     if (data_bytes % 4) {
         dma_size++;
     }
-    outgoing.dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
+    outgoing->dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
 
     // Fill in the FCS values
-    char *ptr = &outgoing.data[length];
+    char *ptr = &outgoing->data[length];
     *ptr++ = (uint8_t)(fcs >> 0);
     *ptr++ = (uint8_t)(fcs >> 8);
     *ptr++ = (uint8_t)(fcs >> 16);
@@ -269,10 +282,12 @@ void mac_tx_send(uint8_t *data, uint length) {
     // so SM will be gone, we shouldn't trigger in that case a it
     // will never complete.
 
-    int outlen = outgoing.dibits/4;
-    uint8_t *p = (uint8_t *)&outgoing;
+    int outlen = outgoing->dibits/4;
+    uint8_t *p = (uint8_t *)outgoing;
 
     // Now start the main dma...
-    dma_channel_set_read_addr(tx_dma_chan, &outgoing, false);
+    dma_channel_set_read_addr(tx_dma_chan, outgoing, false);
     dma_channel_set_trans_count(tx_dma_chan, dma_size, true);
+//    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
+
 }
