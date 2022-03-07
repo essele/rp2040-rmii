@@ -138,6 +138,7 @@ static inline void mac_rx_unload(PIO pio, uint sm) {
     pio_sm_set_enabled(pio, sm, false);
     pio_interrupt_clear(pio, sm);
     pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, false);
+    pio_sm_clear_fifos(pio, sm);
     pio_remove_program(pio, rx_prog, rx_offset);
 }
 

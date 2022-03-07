@@ -121,7 +121,7 @@ static err_t rmii_linkoutput(struct netif *netif, struct pbuf *p)
 #if ETH_PAD_SIZE
     pbuf_remove_header(p, ETH_PAD_SIZE); /* drop the padding word */
 #endif
-
+/*
     // For the moment we'll just pull all the pbufs together into
     // a new buffer and send that
     uint8_t buffer[1600];
@@ -131,10 +131,14 @@ static err_t rmii_linkoutput(struct netif *netif, struct pbuf *p)
         memcpy(&buffer[len], q->payload, q->len);
         len += q->len;
     }
-    while (len < 60) {
-        buffer[len++] = 0;
-    }
+    if (len < 60) len = 60;
     mac_tx_send(buffer, len);
+*/
+    mac_tx_send_pbuf(p);
+#if ETH_PAD_SIZE
+    pbuf_add_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+#endif
+
     return ERR_OK;
 }
 
@@ -295,18 +299,15 @@ int main() {
 
     // If we are running at 500MHz PLL output, then we need a /10 output for
     // the 50MHz PHY clock
-    //clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS, 10);
-
-    uint clkpin = 21;
-    //gpio_set_drive_strength(clkpin, GPIO_DRIVE_STRENGTH_12MA);
-    //gpio_set_slew_rate(clkpin, GPIO_SLEW_RATE_FAST);
-
-    uint offset;
-    int sm = pio_claim_unused_sm(pio0, true);
-
-    offset = pio_add_program(pio0, &clock50_program);
-    clock50_program_init(pio0, sm, offset, clkpin);
-
+//    clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS, 10);
+    //
+    // New approach ... just clock the pin using the clk_sys value then we will hopefully
+    // be in sync and not have any variation in phase between clk_sys and the output.
+    //
+    // NOTE: I'm assuming this will also work for 150MHz but we'll need to use the duty
+    // cycle fix thing because of the divide by odd number (3).
+    //
+    clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 2);
 
     // We prioritise DMA... both read and write...
     //bus_ctrl_hw->priority |= (1 << 12) | (1 << 8);
@@ -363,46 +364,16 @@ int main() {
 
     //httpd_init();
 
-    uint8_t prevDHCPState;
-
-
-    bus_ctrl_hw->counter[0].sel = arbiter_sram0_perf_event_access_contested;
-    bus_ctrl_hw->counter[1].sel = arbiter_sram1_perf_event_access_contested;
-    bus_ctrl_hw->counter[2].sel = arbiter_sram2_perf_event_access_contested;
-    bus_ctrl_hw->counter[3].sel = arbiter_sram5_perf_event_access_contested;
-//    bus_ctrl_hw->counter[0].sel = arbiter_sram3_perf_event_access_contested;
-//    bus_ctrl_hw->counter[1].sel = arbiter_sram2_perf_event_access_contested;
-//    bus_ctrl_hw->counter[2].sel = arbiter_sram1_perf_event_access_contested;
-//    bus_ctrl_hw->counter[3].sel = arbiter_sram0_perf_event_access_contested;
     uint64_t last_perf = 0;
-
-    // Sram0 = 001500
-    // seam1 = 000300
-    // sram2 = 000900
-    // sram3 = 000300
-    // sram4 = 000000
-    // sram5 = 005d00 !! ? Why?
-    // fastperi = 0
-    // apb = 0
-    // xip = 0
-
+    uint8_t prevDHCPState;
 
     while( true )
     {
-        
         uint64_t now = time_us_64();
         if (now > last_perf + 1000000) {
             last_perf = now;
-//            printf("COUNTERS: %06x %06x %06x %06x\r\n", bus_ctrl_hw->counter[0].value,
-//                bus_ctrl_hw->counter[1].value, bus_ctrl_hw->counter[2].value,
-//                bus_ctrl_hw->counter[3].value);
-
-//            for (int i=0; i < 4; i++) {
-//                bus_ctrl_hw->counter[i].value = 0;
             print_rx_stats();
         }
-    
-        
 
         //sleep_us( 1 );
         sys_check_timeouts();

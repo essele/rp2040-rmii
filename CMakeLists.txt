@@ -32,6 +32,7 @@ target_compile_definitions(rp2040_rmii PRIVATE
   PICO_DEFAULT_UART_TX_PIN=16
   PICO_DEFAULT_UART_RX_PIN=17
   PICO_DEFAULT_UART=0
+  RMII_USE_LWIP=1
 )
 
 # Make sure we can find lwipopts.h...

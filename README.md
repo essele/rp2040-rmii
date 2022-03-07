@@ -11,6 +11,7 @@ This is very much work-in-progress and will develop over time, currently working
 - 10BASE-T send and receive, both half & full duplex
 - TX inter-packet-gap honored for full duplex
 - Half duplex TX carrier detection and inter-packet-gap
+- Both TX & RX use 32bit DMA to improve performance
 - PIO based mdio interface
 - Auto detection of phy type and address
 - Link state & speed monitoring
@@ -27,11 +28,10 @@ Still to do:
 
 Current WIP Status:
 
-- LWIP working, DHCP working fine. Zero-copy done on RX side.
-- Some checksum and overrun errors when flood pinging
-- Likely IRQ issues caused by timer (reduces when using longer interval)
-- Packet TX needs to be clock aligned (probably need 10/100 versions - or NOP instruction)
-- Copying data for TX twice at the moment, need to fix
+- LWIP working, DHCP working fine. Zero-copy done on RX side. TX one copy.
+- Some checksum and overrun errors when flood pinging (not convinced this isn't jumper-wire related)
+- Inter-packet-gap on TX 10fd isn't long enough, run out of PIO instructions
+- Started #define's for chosing LWIP or not.
 
 ## Background
 

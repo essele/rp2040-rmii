@@ -203,12 +203,6 @@ void __time_critical_func(pio_rx_isr)() {
     // Restart the state machine by clearing the IRQ
     pio_interrupt_clear(pio0, rx_sm + 0);
 
-//    uint32_t fd = pio0_hw->fdebug;
-//    if (fd != 0x05000000) {
-//        printf("FDEBUG: %08x  (rx=%d)\r\n", pio0_hw->fdebug, rx_sm);
-//    }
-//    pio0_hw->fdebug = ~0;
-
     // Now we are nicely running we can do the processing that's less time critical
     if (overrun) {
         rxstats.oob++;
@@ -252,19 +246,6 @@ void __time_critical_func(pio_rx_isr)() {
     // Now add the packet to the ready list...
     rx_add_to_ready_list_noirq(received);
     rxstats.packets++;
-//    printf("CHECKSUM OK   : %08x (length=%d): ", received->checksum, received->length);
-//    int i = 0;
-//    for (; i < 8; i++) {
-//        printf("%02x ", received->data[i]);
-//    }
-//    printf("... ");
-//    i = received->length - 8;
-//    for (; i < received->length; i++) {
-//        printf("%02x ", received->data[i]);
-//    }
-//    printf("\r\n");
-
-//    printf(".");
 }
 
 //
