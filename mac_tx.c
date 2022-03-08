@@ -19,6 +19,65 @@
 
 #include "mac_tx.h"
 
+#include "pio_utils.h"
+
+static uint tx_offset;          // so we know where the program loaded
+pio_program_t *tx_prog;         // so we know which one it was
+
+//
+// We're going to do the initialisation of the PIO TX code in here so we need a way to select
+// from the different programs needed for different situations...
+//
+const static struct pio_prog tx_programs[] = {
+    { PIO_PROG(mac_tx_100hd) },
+    { PIO_PROG(mac_tx_100fd) },
+    { PIO_PROG(mac_tx_10hd) },
+    { PIO_PROG(mac_tx_10fd) },
+};
+
+//
+// Load and configure the relevant PIO program depending on what's needed...
+//
+static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uint pin_crs, int speed, int duplex) {
+    pio_sm_config   c;
+
+    int index = (speed == 100) ? duplex : 2 + duplex;
+    printf("Loading from index=%d (speed=%d duplex=%d)\r\n", index, speed, duplex);
+    struct pio_prog *prog = (struct pio_prog *)&tx_programs[index];
+
+    tx_prog = (pio_program_t *)prog->program;
+    tx_offset = pio_add_program(pio, tx_prog);
+    c = prog->config_func(tx_offset);
+
+    // Map the state machine's OUT pin group to the two output pins 
+    sm_config_set_out_pins(&c, pin_tx0, 2);
+    sm_config_set_set_pins(&c, pin_tx0, 2);
+    sm_config_set_jmp_pin(&c, pin_crs);
+    // txen is a side set pin...
+    sm_config_set_sideset_pins(&c, pin_txen);
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_tx0);
+    pio_gpio_init(pio, pin_tx0+1);
+    pio_gpio_init(pio, pin_txen);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_tx0, 2, true);      // output
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_txen, 1, true);     // output
+    // Set direction, autopull, and shift sizes
+    sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
+    // We want to be able to check when the FIFO has anything in it
+    // So TX < 1 means STATUS will be all 1's when the fifo is empty
+    sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    // Load our configuration, and get ready to start...
+    pio_sm_init(pio, sm, tx_offset, &c);
+}
+
+static inline void mac_tx_unload(PIO pio, uint sm) {
+    pio_sm_set_enabled(pio, sm, false);
+    pio_sm_clear_fifos(pio, sm);
+    pio_remove_program(pio, tx_prog, tx_offset);
+}
+
 static uint                tx_pin_tx0;
 static uint                tx_pin_txen;
 static uint                tx_pin_crs;          // for carrier detection

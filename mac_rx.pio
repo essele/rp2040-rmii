@@ -88,6 +88,7 @@ start:
 
 
 % c-sdk {
+/*
 //
 // Different way of doing this ... load the program into the PIO, do the configuration
 // don't actually start it, keep the offset (so we can unload it again.)
@@ -141,5 +142,5 @@ static inline void mac_rx_unload(PIO pio, uint sm) {
     pio_sm_clear_fifos(pio, sm);
     pio_remove_program(pio, rx_prog, rx_offset);
 }
-
+*/
 %}

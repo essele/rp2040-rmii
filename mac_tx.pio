@@ -60,126 +60,51 @@ waitloop:
 .program mac_tx_10hd
 ; For half duplex we should check crs to ensure it's been low for
 ; at least 96 bit cycles before we try and send, this is 960 cycles
-; at our clock speed... but we can only manage 32*(8+8) so we are a bit
-; short, otherwise we run out of instructions!
+; at our clock speed.
 ;
-.side_set 1 opt
+.side_set 1
 .wrap_target
 idle_start:
-    set x, 31
+    set x, 29                   side 0
 idle_wait:
-    jmp pin, idle_start [7]     ; if crs goes high we start again
-    jmp x--, idle_wait [7]      ; count down for 23 (92 cycles)
+    jmp pin, idle_start [15]    side 0  ; if crs goes high we start again
+    jmp x--, idle_wait [15]     side 0  ; count down for 30 * 32 cycles (960)
 
 data_wait:
-    jmp pin, idle_start         ; if crs goes high start again
-    mov x, !status
-    jmp !x, data_wait           ; loop if nothing in fifo 
+    jmp pin, idle_start         side 0  ; if crs goes high start again
+    mov x, !status              side 0
+    jmp !x, data_wait           side 0  ; loop if nothing in fifo 
 
-    out x, 32                   ; number of bit pairs
-    wait 0 gpio 21              ; make sure we're on the right clock edge
+    out x, 32                   side 0  ; number of bit pairs
+    wait 0 gpio 21              side 0  ; make sure we're on the right clock edge
 
 output:
-    out pins, 2 side 1 [7]      ; data out and txen (side) high
-    nop [7]
-    jmp x-- output [3]          ; loop for x dibits
-    set pins, 0 side 0          ; take everything low
+    out pins, 2 side 1 [9]      ; data out and txen (side) high
+    jmp x-- output [9]          side 1  ; loop for x dibits
+    set pins, 0                 side 0  ; take everything low
 
-    mov osr, null               ; throw away anything left
-    out null, 32
+    mov osr, null               side 0  ; throw away anything left
+    out null, 32                side 0
 .wrap
+
 
 .program mac_tx_10fd
-.side_set 1 opt
+.side_set 1
 
 .wrap_target
-    out x, 32                   ; number of bit pairs
-    wait 0 gpio 21              ; make sure we're on the right clock edge
+    out x, 32               side 0  ; number of bit pairs
+    wait 0 gpio 21          side 0  ; make sure we're on the right clock edge
 
 output:
-    out pins, 2 side 1 [7]      ; data out and txen (side) high
-    nop [7]                     ; we need 20 cycles (only 7 delay allowed)
-    jmp x-- output [3]          ; loop for x dibits
-    set pins, 0 side 0          ; take everything low
+    out pins, 2 [9]         side 1  ; data out and txen (side) high
+    jmp x-- output [9]      side 1  ; loop for x dibits
+    set pins, 0             side 0  ; take everything low
 
-    mov osr, null               ; throw away anything left
-    out null, 32
+    mov osr, null           side 0  ; throw away anything left
+    out null, 32            side 0
 
-    set x, 24                   ; 24x8 = 2x96 (100Mhz)
+    set x, 29               side 0  ; 24x8 = 2x96 (100Mhz)
 waitloop:
-    jmp x-- waitloop [7]
+    nop [15]                side 0  ; 16 cycles
+    jmp x-- waitloop [15]   side 0  ; 16 cycles (30 x 32 = 960)
 .wrap
-
-
-% c-sdk {
-//
-// Different way of doing this ... load the program into the PIO, do the configuration
-// don't actually start it, keep the offset (so we can unload it again.)
-//
-static uint tx_offset;
-pio_program_t *tx_prog;
-
-static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uint pin_crs, int speed, int duplex) {
-    pio_sm_config c;
-
-    if (speed == 100) {
-        if (duplex) {
-            tx_prog = (pio_program_t *)&mac_tx_100fd_program;
-            tx_offset = pio_add_program(pio, tx_prog);
-            c = mac_tx_100fd_program_get_default_config(tx_offset);
-        } else {
-            tx_prog = (pio_program_t *)&mac_tx_100hd_program;
-            tx_offset = pio_add_program(pio, tx_prog);
-            c = mac_tx_100hd_program_get_default_config(tx_offset);
-        }
-    } else {
-        if (duplex) {
-            tx_prog = (pio_program_t *)&mac_tx_10fd_program;
-            tx_offset = pio_add_program(pio, tx_prog);
-            c = mac_tx_10fd_program_get_default_config(tx_offset);
-        } else {
-            tx_prog = (pio_program_t *)&mac_tx_10hd_program;
-            tx_offset = pio_add_program(pio, tx_prog);
-            c = mac_tx_10hd_program_get_default_config(tx_offset);
-        }
-    }
-
-    // Map the state machine's OUT pin group to the two output pins 
-    sm_config_set_out_pins(&c, pin_tx0, 2);
-    sm_config_set_set_pins(&c, pin_tx0, 2);
-    sm_config_set_jmp_pin(&c, pin_crs);
-
-    // txen is a side set pin...
-    sm_config_set_sideset_pins(&c, pin_txen);
-
-    // Set this pin's GPIO function (connect PIO to the pad)
-    pio_gpio_init(pio, pin_tx0);
-    pio_gpio_init(pio, pin_tx0+1);
-    pio_gpio_init(pio, pin_txen);
-
-    // Set the pin direction to output at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_tx0, 2, true);      // output
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_txen, 1, true);     // output
-
-    // Set direction, autopull, and shift sizes
-    sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
-
-    // We want to be able to check when the FIFO has anything in it
-    // So TX < 1 means STATUS will be all 1's when the fifo is empty
-    sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
-
-    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
-//    sm_config_set_clkdiv(&c, (speed == 10 ? 10 : 1));
-
-    // Load our configuration, and get ready to start...
-    pio_sm_init(pio, sm, tx_offset, &c);
-}
-
-static inline void mac_tx_unload(PIO pio, uint sm) {
-    pio_sm_set_enabled(pio, sm, false);
-    pio_sm_clear_fifos(pio, sm);
-    pio_remove_program(pio, tx_prog, tx_offset);
-}
-
-
-%}

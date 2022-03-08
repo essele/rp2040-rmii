@@ -21,17 +21,80 @@
 
 #include "mac_rx.h"
 
+#include "pio_utils.h"
+
+static uint tx_offset;          // so we know where the program loaded
+pio_program_t *tx_prog;         // so we know which one it was
+
+//
+// We're going to do the initialisation of the PIO RX code in here so we need a way to select
+// from the different programs needed for different situations...
+//
+const static struct pio_prog rx_programs[] = {
+    { PIO_PROG(mac_rx_10) },
+    { PIO_PROG(mac_rx_100) },
+};
+
+static uint rx_offset;
+pio_program_t *rx_prog;
+
+//
+// Load and configure the relevant PIO program depending on what's needed...
+//
+static inline int mac_rx_load(PIO pio, uint sm, uint pin_rx0, uint pin_crs, int speed) {
+    pio_sm_config c;
+
+    int index = (speed == 100) ? 1 : 0;
+    struct pio_prog *prog = (struct pio_prog *)&rx_programs[index];
+
+    rx_prog = (pio_program_t *)prog->program;
+    rx_offset = pio_add_program(pio, rx_prog);
+    c = prog->config_func(rx_offset);
+
+    // Setup the configuration...
+    sm_config_set_in_pins(&c, pin_rx0);
+    sm_config_set_jmp_pin(&c, pin_crs);
+
+    // Connect PIO to the pads (not technically needed for rx, but cleaner)
+    pio_gpio_init(pio, pin_rx0);
+    pio_gpio_init(pio, pin_rx0+1);
+    pio_gpio_init(pio, pin_crs);
+
+    // Set the pin direction to input at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_rx0, 2, false);     // input
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_crs, 1, false);     // input
+
+    // Set direction, autopull, and shift sizes
+    sm_config_set_in_shift(&c, true, true, 32);                      // shift right, autopush, 8 bits
+
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);                  // join the RX fifos
+
+    pio_interrupt_clear(pio, sm);
+    pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, true);
+
+    // Load our configuration, and get ready to start...
+    pio_sm_init(pio, sm, rx_offset, &c);
+}
+
+static inline void mac_rx_unload(PIO pio, uint sm) {
+    pio_sm_set_enabled(pio, sm, false);
+    pio_interrupt_clear(pio, sm);
+    pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, false);
+    pio_sm_clear_fifos(pio, sm);
+    pio_remove_program(pio, rx_prog, rx_offset);
+}
+
+
+
+
 uint                rx_pin_rx0;
 uint                rx_pin_crs;
 
 PIO                 rx_pio = pio0;          // Which PIO are we running on for RX
-uint                rx_sm;                 // State machine for RX
-//uint                rx_offset;             // Start of the RX code
+uint                rx_sm;                  // State machine for RX
 
 dma_channel_hw_t    *rx_dma_chan_hw;
 int                 rx_dma_chan;
-
-volatile int flag = 0;
 
 struct rx_stats {
     int32_t     packets;
@@ -57,7 +120,7 @@ void print_rx_stats() {
 // easily add and remove from the front.
 struct rx_frame rx_frames[RX_FRAME_COUNT];
 volatile struct rx_frame *rx_free_list;                  // list of free-to-use frames
-volatile struct rx_frame *rx_current;                    // the one being used
+struct rx_frame *rx_current;                    // the one being used
 
 volatile struct rx_frame *rx_ready_list;                 // a list of packets needing to be processed
 volatile struct rx_frame *rx_ready_tail;                 // the last item in the list (so we can add to the end)
@@ -86,11 +149,11 @@ void rx_frame_init() {
  * @return struct rx_frame *
  */
 struct rx_frame *rx_get_free_frame() {
-    struct rx_frame *rc = rx_free_list;
+    struct rx_frame *rc = (struct rx_frame *)rx_free_list;
 
     if (rc) {
-        rx_free_list = rc->next;
-        rc->next = 0;
+        rx_free_list = (struct rx_frame *)rc->next;
+//        rc->next = 0;         // not important when out of a list
     }
     return rc;
 }
@@ -105,7 +168,7 @@ struct rx_frame *rx_get_free_frame() {
  */
 void rx_add_to_free_list(struct rx_frame *frame) {
     uint32_t irq_save = save_and_disable_interrupts();
-    frame->next = rx_free_list;
+    frame->next = (struct rx_frame *)rx_free_list;
     rx_free_list = frame;
     restore_interrupts(irq_save);
 }
@@ -115,10 +178,15 @@ void rx_add_to_free_list(struct rx_frame *frame) {
  * @param frame 
  */
 static inline void rx_add_to_free_list_noirq(struct rx_frame *frame) {
-    frame->next = rx_free_list;
+    frame->next = (struct rx_frame *)rx_free_list;
     rx_free_list = frame;
 }
 
+/**
+ * @brief Adds a frame to the tail of the ready list
+ * 
+ * @param frame 
+ */
 static inline void rx_add_to_ready_list_noirq(struct rx_frame *frame) {
     frame->next = 0;
 
@@ -133,16 +201,25 @@ static inline void rx_add_to_ready_list_noirq(struct rx_frame *frame) {
     }
 }
 
+/**
+ * @brief Return a frame from the ready list
+ * 
+ * Returns the next frame from the head of the ready list or NULL if there aren't
+ * any available. Interrupts are disabled while the list is updated to avoid 
+ * conflicts with the ISR which adds them.
+ * 
+ * @return struct rx_frame* 
+ */
 struct rx_frame *rx_get_ready_frame() {
     struct rx_frame *rc;
     uint32_t irq_save = save_and_disable_interrupts();
-    rc = rx_ready_list;
+    rc = (struct rx_frame *)rx_ready_list;
     if (rc) {
         rx_ready_list = rx_ready_list->next;
-        if (!rx_ready_list) {
+        if (!rx_ready_list) {       // did we get the last one?
             rx_ready_tail = 0;
         }
-        rc->next = 0;
+        //rc->next = 0;             // not important while out of a list
     }
     restore_interrupts(irq_save);
     return(rc);
@@ -180,7 +257,7 @@ void __time_critical_func(pio_rx_isr)() {
     // Immediately find a new frame for the next incoming packet, we can process this one
     // after everything is back up and running... if we don't have a free one then we just
     // reuse this one. Make sure rx_current is updated to the new packet.
-    struct rx_frame *received = rx_current;
+    struct rx_frame *received = (struct rx_frame *)rx_current;
     struct rx_frame *new = rx_get_free_frame();
     if (!new) {
         overrun = 1;

@@ -30,7 +30,6 @@ Current WIP Status:
 
 - LWIP working, DHCP working fine. Zero-copy done on RX side. TX one copy.
 - Some checksum and overrun errors when flood pinging (not convinced this isn't jumper-wire related)
-- Inter-packet-gap on TX 10fd isn't long enough, run out of PIO instructions
 - Started #define's for chosing LWIP or not.
 
 ## Background
