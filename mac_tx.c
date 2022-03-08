@@ -19,6 +19,65 @@
 
 #include "mac_tx.h"
 
+#include "pio_utils.h"
+
+static uint tx_offset;          // so we know where the program loaded
+pio_program_t *tx_prog;         // so we know which one it was
+
+//
+// We're going to do the initialisation of the PIO TX code in here so we need a way to select
+// from the different programs needed for different situations...
+//
+const static struct pio_prog tx_programs[] = {
+    { PIO_PROG(mac_tx_100hd) },
+    { PIO_PROG(mac_tx_100fd) },
+    { PIO_PROG(mac_tx_10hd) },
+    { PIO_PROG(mac_tx_10fd) },
+};
+
+//
+// Load and configure the relevant PIO program depending on what's needed...
+//
+static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uint pin_crs, int speed, int duplex) {
+    pio_sm_config   c;
+
+    int index = (speed == 100) ? duplex : 2 + duplex;
+    printf("Loading from index=%d (speed=%d duplex=%d)\r\n", index, speed, duplex);
+    struct pio_prog *prog = (struct pio_prog *)&tx_programs[index];
+
+    tx_prog = (pio_program_t *)prog->program;
+    tx_offset = pio_add_program(pio, tx_prog);
+    c = prog->config_func(tx_offset);
+
+    // Map the state machine's OUT pin group to the two output pins 
+    sm_config_set_out_pins(&c, pin_tx0, 2);
+    sm_config_set_set_pins(&c, pin_tx0, 2);
+    sm_config_set_jmp_pin(&c, pin_crs);
+    // txen is a side set pin...
+    sm_config_set_sideset_pins(&c, pin_txen);
+    // Set this pin's GPIO function (connect PIO to the pad)
+    pio_gpio_init(pio, pin_tx0);
+    pio_gpio_init(pio, pin_tx0+1);
+    pio_gpio_init(pio, pin_txen);
+    // Set the pin direction to output at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_tx0, 2, true);      // output
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_txen, 1, true);     // output
+    // Set direction, autopull, and shift sizes
+    sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
+    // We want to be able to check when the FIFO has anything in it
+    // So TX < 1 means STATUS will be all 1's when the fifo is empty
+    sm_config_set_mov_status(&c, STATUS_TX_LESSTHAN, 1);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    // Load our configuration, and get ready to start...
+    pio_sm_init(pio, sm, tx_offset, &c);
+}
+
+static inline void mac_tx_unload(PIO pio, uint sm) {
+    pio_sm_set_enabled(pio, sm, false);
+    pio_sm_clear_fifos(pio, sm);
+    pio_remove_program(pio, tx_prog, tx_offset);
+}
+
 static uint                tx_pin_tx0;
 static uint                tx_pin_txen;
 static uint                tx_pin_crs;          // for carrier detection
@@ -48,12 +107,16 @@ static int                 tx_copy_chan;        // used for copying data around
 //
 #define MAX_ETHERNET_BYTES      18 + 1500 + 4   // hdr, payload, crc
 
-struct {
+struct outgoing_t {
     uint32_t    dibits;                         // How many dibits are going
     uint8_t     preamble[8];                    // preamble
     uint8_t     data[MAX_ETHERNET_BYTES];       // hdr, payload, fcs
-} outgoing;
+};
 
+//struct outgoing_t __scratch_x("sram4_lee") outbufs[2];
+struct outgoing_t outbufs[2];
+struct outgoing_t *outgoing;
+uint              next_outgoing = 0;
 
 // Don't declare this as const, it's probably quicker being
 // in memory rather than flash...
@@ -129,7 +192,9 @@ void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
     // stay constant.
     //
     static uint8_t preamble[8] = { 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5 };
-    memcpy(outgoing.preamble, preamble, 8);
+    for (int i=0; i < 2; i++) {
+        memcpy(outbufs[i].preamble, preamble, 8);
+    }
 
     //
     // Setup and start the TX state machine
@@ -161,11 +226,14 @@ void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
     channel_config_set_dreq(&tx_dma_channel_config, pio_get_dreq(tx_pio, tx_sm, true));
     channel_config_set_transfer_data_size(&tx_dma_channel_config, DMA_SIZE_32);
     dma_channel_configure(tx_dma_chan, &tx_dma_channel_config, &tx_pio->txf[tx_sm], 0, 0, false);
+
+    //tx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
+
 }
 
 
 void mac_tx_test() {
-        uint8_t packet[] = {
+        static uint8_t packet[1200] = {
 //        0x00, 0x00, 0x00, 0x00,             // FOr number of dibits
 //        0x00, 0x00, 0x00, 0x00,             // For number of padding bytes
 
@@ -195,9 +263,88 @@ void mac_tx_test() {
 //        0x00, 0x00, 0x00, 0x00,                         // spaxce for checksum
     };
 
-    printf("Sending ... ");
+    //printf("Sending ... ");
     mac_tx_send(packet, sizeof(packet));
 }
+
+// --------------------------------------------------------------------------------
+// We have two different send functions, once for just sending a block of uint8_t
+// data, and another one that processes LWIP pbuf's. There's quite a bit of
+// duplicate code to worry about!
+// --------------------------------------------------------------------------------
+
+#ifdef RMII_USE_LWIP
+
+//#include "lwip/def.h"
+
+void mac_tx_send_pbuf(struct pbuf *p) {
+    uint32_t fcs = 0;
+    struct pbuf *q;
+
+    // If the state machine isn't enabled then the link is down
+    // (Note this could change while we're in here!)
+    if (!(tx_pio->ctrl & (1 << tx_sm))) {
+        printf("SM down, discarding\r\n");
+        return;
+    }
+    // We need to copy the packet to the next outgoing buffer (double buffered)
+    // so we don't interfere with the currently transmitting one...
+    outgoing = &outbufs[next_outgoing];
+    next_outgoing ^= 1;                 // toggle
+    uint8_t *out = outgoing->data;
+
+    // We won't know the size until we try to process it...
+    uint length = 0;
+    for(q=p; q != NULL; q=q->next) {
+        // Make the the previous DMA has finished before we start a new one...
+        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+
+        // For each pbuf ... DMA the data over so we can start on the fcs...
+        dma_channel_set_read_addr(tx_copy_chan, q->payload, false);
+        dma_channel_set_write_addr(tx_copy_chan, out, false);
+        dma_channel_set_trans_count(tx_copy_chan, q->len, true);
+        fcs = pkt_generate_fcs(q->payload, q->len, fcs);
+        out += q->len;
+        length += q->len;
+    }
+    // Deal with small packets... TODO
+    if (length < 60) {
+        memset(out, 0x00, 60-length);
+        fcs = pkt_generate_fcs(out, 60-length, fcs);
+        length = 60;
+    }
+    // Fill in the dibits and work out how many 32bit words it will be
+    uint32_t data_bytes = sizeof(outgoing->preamble) + length + 4;   // preamble + data + fcs
+    uint dma_size = (data_bytes / 4) + 1;                           // data + length control words
+
+    if (data_bytes % 4) {
+        dma_size++;
+    }
+    outgoing->dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
+
+    // Fill in the FCS values
+    char *ptr = &outgoing->data[length];
+    *ptr++ = (uint8_t)(fcs >> 0);
+    *ptr++ = (uint8_t)(fcs >> 8);
+    *ptr++ = (uint8_t)(fcs >> 16);
+    *ptr++ = (uint8_t)(fcs >> 24);
+
+    // Now wait for (it will be done) the copy DMA to complete...
+    while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+
+    // Now check to ensure the previous packet send has completed...
+    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
+
+    // TODO: potential of the link going down before we get here
+    // so SM will be gone, we shouldn't trigger in that case a it
+    // will never complete.
+
+    // Now start the main dma...
+    dma_channel_set_read_addr(tx_dma_chan, outgoing, false);
+    dma_channel_set_trans_count(tx_dma_chan, dma_size, true);
+}
+
+#endif // RMII_USE_LWIP
 
 /**
  * @brief Send an ethernet frame (without preamble or fcs, this will add them)
@@ -222,10 +369,14 @@ void mac_tx_send(uint8_t *data, uint length) {
         printf("TX packet too big, discarding\r\n");
         return;
     }
+    // We need to copy the packet to the next outgoing buffer (double buffered)
+    // so we don't interfere with the currently transmitting one...
+    outgoing = &outbufs[next_outgoing];
+    next_outgoing ^= 1;                 // toggle
 
     // DMA the data over so we can start on the fcs...
     dma_channel_set_read_addr(tx_copy_chan, data, false);
-    dma_channel_set_write_addr(tx_copy_chan, outgoing.data, false);
+    dma_channel_set_write_addr(tx_copy_chan, outgoing->data, false);
     dma_channel_set_trans_count(tx_copy_chan, length, true);
 
     // If the packet is less than 60 bytes we need to expand it, this is
@@ -235,25 +386,20 @@ void mac_tx_send(uint8_t *data, uint length) {
     //
     // The normal case means the fcs on the source data can start in parallel
     // with the copy, this saves quite a few cycles.
-    if (length < 60) {
-        while (length < 60) outgoing.data[length++] = 0;
-        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
-        fcs = pkt_generate_fcs(outgoing.data, length, fcs);
-    } else {
-        fcs = pkt_generate_fcs(data, length, fcs);
-    }
+    if (length < 60) length = 60;
+    fcs = pkt_generate_fcs(data, length, fcs);
 
     // Fill in the dibits and work out how many 32bit words it will be
-    uint32_t data_bytes = sizeof(outgoing.preamble) + length + 4;   // preamble + data + fcs
+    uint32_t data_bytes = sizeof(outgoing->preamble) + length + 4;   // preamble + data + fcs
     uint dma_size = (data_bytes / 4) + 1;                           // data + length control words
 
     if (data_bytes % 4) {
         dma_size++;
     }
-    outgoing.dibits = data_bytes * 4;
+    outgoing->dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
 
     // Fill in the FCS values
-    char *ptr = &outgoing.data[length];
+    char *ptr = &outgoing->data[length];
     *ptr++ = (uint8_t)(fcs >> 0);
     *ptr++ = (uint8_t)(fcs >> 8);
     *ptr++ = (uint8_t)(fcs >> 16);
@@ -270,6 +416,6 @@ void mac_tx_send(uint8_t *data, uint length) {
     // will never complete.
 
     // Now start the main dma...
-    dma_channel_set_read_addr(tx_dma_chan, &outgoing, false);
+    dma_channel_set_read_addr(tx_dma_chan, outgoing, false);
     dma_channel_set_trans_count(tx_dma_chan, dma_size, true);
 }

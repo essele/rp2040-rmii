@@ -19,37 +19,111 @@
 #include "hardware/sync.h"
 #include "mac_rx.pio.h"
 
+#include "mac_rx.h"
+
+#include "pio_utils.h"
+
+static uint tx_offset;          // so we know where the program loaded
+pio_program_t *tx_prog;         // so we know which one it was
+
+//
+// We're going to do the initialisation of the PIO RX code in here so we need a way to select
+// from the different programs needed for different situations...
+//
+const static struct pio_prog rx_programs[] = {
+    { PIO_PROG(mac_rx_10) },
+    { PIO_PROG(mac_rx_100) },
+};
+
+static uint rx_offset;
+pio_program_t *rx_prog;
+
+//
+// Load and configure the relevant PIO program depending on what's needed...
+//
+static inline int mac_rx_load(PIO pio, uint sm, uint pin_rx0, uint pin_crs, int speed) {
+    pio_sm_config c;
+
+    int index = (speed == 100) ? 1 : 0;
+    struct pio_prog *prog = (struct pio_prog *)&rx_programs[index];
+
+    rx_prog = (pio_program_t *)prog->program;
+    rx_offset = pio_add_program(pio, rx_prog);
+    c = prog->config_func(rx_offset);
+
+    // Setup the configuration...
+    sm_config_set_in_pins(&c, pin_rx0);
+    sm_config_set_jmp_pin(&c, pin_crs);
+
+    // Connect PIO to the pads (not technically needed for rx, but cleaner)
+    pio_gpio_init(pio, pin_rx0);
+    pio_gpio_init(pio, pin_rx0+1);
+    pio_gpio_init(pio, pin_crs);
+
+    // Set the pin direction to input at the PIO
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_rx0, 2, false);     // input
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_crs, 1, false);     // input
+
+    // Set direction, autopull, and shift sizes
+    sm_config_set_in_shift(&c, true, true, 32);                      // shift right, autopush, 8 bits
+
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);                  // join the RX fifos
+
+    pio_interrupt_clear(pio, sm);
+    pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, true);
+
+    // Load our configuration, and get ready to start...
+    pio_sm_init(pio, sm, rx_offset, &c);
+}
+
+static inline void mac_rx_unload(PIO pio, uint sm) {
+    pio_sm_set_enabled(pio, sm, false);
+    pio_interrupt_clear(pio, sm);
+    pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, false);
+    pio_sm_clear_fifos(pio, sm);
+    pio_remove_program(pio, rx_prog, rx_offset);
+}
+
+
+
+
 uint                rx_pin_rx0;
 uint                rx_pin_crs;
 
 PIO                 rx_pio = pio0;          // Which PIO are we running on for RX
-uint                rx_sm;                 // State machine for RX
-//uint                rx_offset;             // Start of the RX code
+uint                rx_sm;                  // State machine for RX
 
 dma_channel_hw_t    *rx_dma_chan_hw;
 int                 rx_dma_chan;
 
-volatile int flag = 0;
+struct rx_stats {
+    int32_t     packets;
+    int32_t     oob;
+    int32_t     fcs;
+    int32_t     big;
+};
 
-#define RX_FRAME_COUNT  8
-//#define RX_MAX_BYTES    1446              // for testing large packet handling
-#define RX_MAX_BYTES    1600
-#define ETHER_CHECKSUM  0xc704dd7b
+struct rx_stats rxstats;
 
+
+#define ETHER_CHECKSUM0  0xc704dd7b                 // no trailing zeros
+#define ETHER_CHECKSUM1  0x8104c946                 // one trailing zero (-3 on length)
+#define ETHER_CHECKSUM2  0x3a7abc72                 // two trailing zeros (-2 on length)
+#define ETHER_CHECKSUM3  0x4710bb9c                 // three trailing zeros (-1 on length)
+
+void print_rx_stats() {
+    printf("pkts=%d oob=%d fcs=%d big=%d\r\n", rxstats.packets, rxstats.oob, rxstats.fcs, rxstats.big);
+}
 
 // We need to keep the identification of free frames as quick as possible
 // since it's done in the ISR. So we'll keep a singly linked list, we can
 // easily add and remove from the front.
-struct rx_frame {
-    struct rx_frame     *next;
-    int                 length;
-    int                 checksum;
-    uint8_t             data[RX_MAX_BYTES];
-};
-
 struct rx_frame rx_frames[RX_FRAME_COUNT];
-struct rx_frame *rx_free_list;                  // list of free-to-use frames
+volatile struct rx_frame *rx_free_list;                  // list of free-to-use frames
 struct rx_frame *rx_current;                    // the one being used
+
+volatile struct rx_frame *rx_ready_list;                 // a list of packets needing to be processed
+volatile struct rx_frame *rx_ready_tail;                 // the last item in the list (so we can add to the end)
 
 void rx_frame_init() {
     int i;
@@ -75,11 +149,11 @@ void rx_frame_init() {
  * @return struct rx_frame *
  */
 struct rx_frame *rx_get_free_frame() {
-    struct rx_frame *rc = rx_free_list;
+    struct rx_frame *rc = (struct rx_frame *)rx_free_list;
 
     if (rc) {
-        rx_free_list = rc->next;
-        rc->next = 0;
+        rx_free_list = (struct rx_frame *)rc->next;
+//        rc->next = 0;         // not important when out of a list
     }
     return rc;
 }
@@ -94,7 +168,7 @@ struct rx_frame *rx_get_free_frame() {
  */
 void rx_add_to_free_list(struct rx_frame *frame) {
     uint32_t irq_save = save_and_disable_interrupts();
-    frame->next = rx_free_list;
+    frame->next = (struct rx_frame *)rx_free_list;
     rx_free_list = frame;
     restore_interrupts(irq_save);
 }
@@ -104,11 +178,52 @@ void rx_add_to_free_list(struct rx_frame *frame) {
  * @param frame 
  */
 static inline void rx_add_to_free_list_noirq(struct rx_frame *frame) {
-    frame->next = rx_free_list;
+    frame->next = (struct rx_frame *)rx_free_list;
     rx_free_list = frame;
 }
 
+/**
+ * @brief Adds a frame to the tail of the ready list
+ * 
+ * @param frame 
+ */
+static inline void rx_add_to_ready_list_noirq(struct rx_frame *frame) {
+    frame->next = 0;
 
+    // First deal with the empty case...
+    if (!rx_ready_tail) {
+        rx_ready_list = frame;
+        rx_ready_tail = frame;
+    } else {
+        // At least one is in there, so add to the tail
+        rx_ready_tail->next = frame;
+        rx_ready_tail = frame;
+    }
+}
+
+/**
+ * @brief Return a frame from the ready list
+ * 
+ * Returns the next frame from the head of the ready list or NULL if there aren't
+ * any available. Interrupts are disabled while the list is updated to avoid 
+ * conflicts with the ISR which adds them.
+ * 
+ * @return struct rx_frame* 
+ */
+struct rx_frame *rx_get_ready_frame() {
+    struct rx_frame *rc;
+    uint32_t irq_save = save_and_disable_interrupts();
+    rc = (struct rx_frame *)rx_ready_list;
+    if (rc) {
+        rx_ready_list = rx_ready_list->next;
+        if (!rx_ready_list) {       // did we get the last one?
+            rx_ready_tail = 0;
+        }
+        //rc->next = 0;             // not important while out of a list
+    }
+    restore_interrupts(irq_save);
+    return(rc);
+}
 
 //
 // This is called when the state machine reaches the end of a packet
@@ -126,7 +241,7 @@ static inline void rx_add_to_free_list_noirq(struct rx_frame *frame) {
 // to worry about that.
 //
 //
-void pio_rx_isr() {
+void __time_critical_func(pio_rx_isr)() {
     int         overrun = 0;
     uint32_t    checksum;
 
@@ -142,7 +257,7 @@ void pio_rx_isr() {
     // Immediately find a new frame for the next incoming packet, we can process this one
     // after everything is back up and running... if we don't have a free one then we just
     // reuse this one. Make sure rx_current is updated to the new packet.
-    struct rx_frame *received = rx_current;
+    struct rx_frame *received = (struct rx_frame *)rx_current;
     struct rx_frame *new = rx_get_free_frame();
     if (!new) {
         overrun = 1;
@@ -167,30 +282,47 @@ void pio_rx_isr() {
 
     // Now we are nicely running we can do the processing that's less time critical
     if (overrun) {
-        printf("BUFFER OVERRUN\r\n");
+        rxstats.oob++;
         // We haven't used the packet, so no need to return it...
         return;
     }
-    // Catch the case of a large packet that hasn't tripped the DMA overrun check
-    // TODO: this should be a define...
-    if (received->length >= 1536) {
-        printf("LARGE PACKET\r\n");
-        rx_add_to_free_list_noirq(received);
-        return;
-    }
-    if (received->checksum != ETHER_CHECKSUM) {
-        printf("CHECKSUM ERROR: %08x (length=%d)\r\n", received->checksum, received->length);
+    // Process checksum matching and length adjustment...
+    if (received->checksum == ETHER_CHECKSUM0) {
+    } else if (received->checksum == ETHER_CHECKSUM1) {
+        received->length -= 3;
+    } else if (received->checksum == ETHER_CHECKSUM2) {
+        received->length -= 2;
+    } else if (received->checksum == ETHER_CHECKSUM3) {
+        received->length--;
+    } else {
+        rxstats.fcs++;
+        printf("CHECKSUM ERROR: %08x (length=%d): ", received->checksum, received->length);
+        int i = 0;
+        for (; i < 8; i++) {
+            printf("%02x ", received->data[i]);
+        }
+        printf("... ");
+        i = received->length - 8;
+        for (; i < received->length; i++) {
+            printf("%02x ", received->data[i]);
+        }
+        printf("\r\n");
         // We need to return this packet and don't process any further
         rx_add_to_free_list_noirq(received);
         return;
     }
-    printf("PIO_RX_ISR (size=%d / addr=%08x / fcs=%08x):", received->length, received, received->checksum);
-    for (int i=0; i < 16; i++) {
-        printf(" %02x", received->data[i]);
+
+    // Catch the case of a large packet that hasn't tripped the DMA overrun check
+    // TODO: this should be a define...
+    if (received->length >= 1536) {
+        rxstats.big++;
+        rx_add_to_free_list_noirq(received);
+        return;
     }
-    printf("\r\n");
-    // Plonk the packet back for now...
-    rx_add_to_free_list_noirq(received);
+
+    // Now add the packet to the ready list...
+    rx_add_to_ready_list_noirq(received);
+    rxstats.packets++;
 }
 
 //
@@ -247,6 +379,7 @@ void mac_rx_up(int speed) {
     rx_current = first;
 
     dma_sniffer_enable(rx_dma_chan, 0x1, true);
+//    dma_sniffer_set_byte_swap_enabled(true);
     dma_hw->sniff_data = 0xffffffff;
     dma_channel_hw_addr(rx_dma_chan)->al2_write_addr_trig = (uintptr_t)rx_current->data;
     dma_channel_set_irq0_enabled(rx_dma_chan, true);
@@ -311,16 +444,20 @@ void mac_rx_init(uint pin_rx0, uint pin_crs) {
     channel_config_set_read_increment(&rx_dma_channel_config, false);
     channel_config_set_write_increment(&rx_dma_channel_config, true);
     channel_config_set_dreq(&rx_dma_channel_config, pio_get_dreq(rx_pio, rx_sm, false));
-    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_8);
+    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_32);
+//    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_8);
+
 
     // Dummy configure, so we only have to change write address later...
     dma_channel_configure(
         rx_dma_chan, &rx_dma_channel_config,
         NULL,
-        ((uint8_t*)&rx_pio->rxf[rx_sm]) + 3,
-        RX_MAX_BYTES,
+//        ((uint8_t*)&rx_pio->rxf[rx_sm]) + 3,
+        ((uint8_t*)&rx_pio->rxf[rx_sm]),
+        RX_MAX_BYTES / 4,
         false
     );
+    //rx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
 
     irq_set_exclusive_handler(PIO0_IRQ_0, pio_rx_isr);
     irq_set_enabled(PIO0_IRQ_0, true);

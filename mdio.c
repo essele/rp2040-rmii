@@ -33,6 +33,13 @@ static int     mdio_type;
 #define MDIO_LOW_PRIORITY_IRQ       30              // Avoid the stdio_usb one
 #define MDIO_TASK_INTERVAL_US       10000           // 10ms should be fine
 
+#define MDIO_BASIC_CONTROL          0
+#define MDIO_BASIC_STATUS           1
+#define MDIO_PHY_ID2                3
+#define MDIO_AUTONEG_ADV            4
+#define MDIO_SPECIAL_MODES          18
+#define MDIO_SPECIAL_STATUS         31
+
 static struct {
     int speed;
     int duplex;             // 0 = half, 1 = full   
@@ -185,6 +192,20 @@ static void mdio_isr() {
 }
 
 /**
+ * @brief Polling version of MDIO machine rather than IRQ's
+ *
+ */
+void mdio_poll() {
+    static uint64_t last_call = 0;
+    uint64_t        now = time_us_64();
+
+    if(now > last_call + MDIO_TASK_INTERVAL_US) {
+        mdio_isr();
+        last_call = now;
+    }
+}
+
+/**
  * @brief Setup and start the mmio PIO state machine
  * 
  * @param pin_mdc 
@@ -253,12 +274,14 @@ int mdio_init(uint pin_mdc, uint pin_mdio) {
     }
 
     // Now setup the ISR and timer
+#ifdef MDIO_USE_IRQ
     irq_set_exclusive_handler(MDIO_LOW_PRIORITY_IRQ, mdio_isr);
     irq_set_enabled(MDIO_LOW_PRIORITY_IRQ, true);
 
     add_alarm_in_us(MDIO_TASK_INTERVAL_US, mdio_timer_task, NULL, true);
+#endif
 
-    // Send the first read command (which the ISR will respond to)
+    // Send the first read command (which the ISR or polling system will respond to)
     mdio_send_read_cmd(mdio_addr, MDIO_BASIC_STATUS);
 }
 

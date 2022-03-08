@@ -18,18 +18,24 @@ crswait:
 ; Now we can look for both pins high
 highwait:
     wait 1 pin 0 [1]
-    wait 1 pin 1 [1]
+    wait 1 pin 1 [0]
+    wait 1 gpio 21          ; Make sure we are on the right clock edge
 
-; At 100M we can check RXDV each time and it's fine, however at
-; 10M this line is only valid on the second half of the nibble
-; so we read two lots and then check...
+; At 100M we can check RXDV each time and it's fine, not so at
+; 10M though...
+
 start:
-    in pins, 2 [1]
     in pins, 2
     jmp pin start
+
+; Since we are now operating at 32 bits we need to make sure anything
+; in the ISR is pushed (three instructions is nasty though!)
+    in null, 8
+    in null, 8
+    in null, 8
     irq wait 0 rel
 
-; TODO: We randomly end up with spurious data in here at 100meg??
+; And clear anything out that's left over (overflowed from the above)
     mov isr, null
 .wrap
 
@@ -62,20 +68,27 @@ highwait:
     wait 1 pin 1 [26]
 
 ; We can ready the first dibit in the first 20 cycles, then the second dibit
-; as well as sampling CRS to check for the end of the packet
+; as well as sampling CRS to check for the end of the packet, we will always
+; bring in 4 bits too many (zeros) so we just account for that in our padding
+; and it should work out nicely.
 start:
-    in pins, 2 [19]         ; 20 cycles
-    in pins, 2              ; 1 cycle
-    jmp pin start [18]      ; 19 cycles
+    in pins, 2 [19]         ; 20 cycles (first dibit)
+    in pins, 2              ; 1 cycle (second dibit)
+    jmp pin start [18]      ; loop making 20 in total
+
+; Now we add enough to ensure any bytes over a 32bit word are pushed...
+    in null, 4
+    in null, 8
+    in null, 8
     irq wait 0 rel
 
-; TODO: We end up with spurious data in here at 10meg, so I suspect the previous
-; check isn't quite right?
+; And clear anything left over
     mov isr, null
 .wrap
 
 
 % c-sdk {
+/*
 //
 // Different way of doing this ... load the program into the PIO, do the configuration
 // don't actually start it, keep the offset (so we can unload it again.)
@@ -110,7 +123,8 @@ static inline int mac_rx_load(PIO pio, uint sm, uint pin_rx0, uint pin_crs, int 
     pio_sm_set_consecutive_pindirs(pio, sm, pin_crs, 1, false);     // input
 
     // Set direction, autopull, and shift sizes
-    sm_config_set_in_shift(&c, true, true, 8);                      // shift right, autopush, 8 bits
+//    sm_config_set_in_shift(&c, true, true, 8);                      // shift right, autopush, 8 bits
+    sm_config_set_in_shift(&c, true, true, 32);                      // shift right, autopush, 8 bits
 
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);                  // join the RX fifos
 
@@ -125,7 +139,8 @@ static inline void mac_rx_unload(PIO pio, uint sm) {
     pio_sm_set_enabled(pio, sm, false);
     pio_interrupt_clear(pio, sm);
     pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, false);
+    pio_sm_clear_fifos(pio, sm);
     pio_remove_program(pio, rx_prog, rx_offset);
 }
-
+*/
 %}

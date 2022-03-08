@@ -12,6 +12,13 @@
 void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs);
 void mac_tx_teardown();
 void mac_tx_send(uint8_t *data, uint length);
+
+#ifdef RMII_USE_LWIP
+#include "lwip/pbuf.h"
+
+void mac_tx_send_pbuf(struct pbuf *p);
+#endif
+
 void mac_tx_test();
 
 void mac_tx_up(int speed, int duplex);
