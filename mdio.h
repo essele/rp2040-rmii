@@ -9,7 +9,14 @@
  * 
  */
 
-//#define MDIO_USE_IRQ 1
+
+#define LINK_NO_CHANGE              0
+#define LINK_UP_10HD                1
+#define LINK_UP_10FD                2
+#define LINK_UP_100HD               3
+#define LINK_UP_100FD               4
+#define LINK_DOWN                   5
+#define LINK_UP_UNKNOWN             99
 
 int mdio_init(uint pin_mdc, uint pin_mdio);
-void mdio_poll();
+int mdio_poll();

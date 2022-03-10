@@ -12,6 +12,7 @@ pico_sdk_init()
 
 add_executable(rp2040_rmii
     main.c
+    rmii_lwip.c rmii_lwip.h
     mdio.c mdio.h mdio.pio.h mdio.pio
     mac_rx.c mac_rx.h mac_rx.pio.h mac_rx.pio
     mac_tx.c mac_tx.h mac_tx.pio.h mac_tx.pio

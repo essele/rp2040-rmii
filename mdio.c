@@ -159,8 +159,14 @@ static int      sm_loaded = 0;
 
 //int link_status = 0;        // 0 = down
 
+/**
+ * @brief Internal handler, called by poll or ISR
+ * 
+ * @return int 
+ */
+static int mdio_handler() {
+    int rc = LINK_NO_CHANGE;
 
-static void mdio_isr() {
     if (pio_sm_get_rx_fifo_level(mdio_pio, mdio_sm) > 1) {
         int new_status = !!(mdio_get_read_result() & LINK_STATUS);
 
@@ -173,6 +179,7 @@ static void mdio_isr() {
                     mac_rx_down();
                     sm_loaded = 0;
                 }
+                rc = LINK_DOWN;
             } else {
                 uint mode = (mdio_read(mdio_addr, MDIO_SPECIAL_STATUS) & SPEED) >> 2;
                 int speed = modes[mode].speed;
@@ -184,25 +191,44 @@ static void mdio_isr() {
                     mac_rx_up(speed);
                     sm_loaded = 1;
                 }
+                switch(speed + duplex) {
+                    case 10:    rc = LINK_UP_10HD; break;
+                    case 11:    rc = LINK_UP_10FD; break;
+                    case 100:   rc = LINK_UP_100HD; break;
+                    case 101:   rc = LINK_UP_100FD; break;
+                    default:    rc = LINK_UP_UNKNOWN; break;
+                }
             }
             last_status = new_status;
         }
         mdio_send_read_cmd(mdio_addr, MDIO_BASIC_STATUS);
     }
+    return rc;
+}
+
+/**
+ * @brief The ISR just calls the handler and throws away the result
+ * 
+ * TODO: how do we trigger events?
+ */
+static void mdio_isr() {
+    mdio_handler();
 }
 
 /**
  * @brief Polling version of MDIO machine rather than IRQ's
  *
  */
-void mdio_poll() {
+int mdio_poll() {
     static uint64_t last_call = 0;
     uint64_t        now = time_us_64();
+    int             rc = LINK_NO_CHANGE;
 
     if(now > last_call + MDIO_TASK_INTERVAL_US) {
-        mdio_isr();
+        rc = mdio_handler();
         last_call = now;
     }
+    return rc;
 }
 
 /**
