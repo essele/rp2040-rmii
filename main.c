@@ -4,19 +4,13 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/clocks.h"
-#include "hardware/pll.h"
-//#include "hardware/pio.h"
-//#include "hardware/dma.h"
-#include "hardware/irq.h"
-#include "hardware/structs/bus_ctrl.h"
-#include "clock.pio.h"
 
-#include "lwip/def.h"
+
 #include "rmii_lwip.h"
 #include "lwip/dhcp.h"
 #include "lwip/prot/dhcp.h"
 
-#include "mdio.h"
+//#include "mdio.h"
 
 const uint LED_PIN = 25;
 

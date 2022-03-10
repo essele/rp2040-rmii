@@ -8,7 +8,10 @@
  * @copyright Copyright (c) 2022
  * 
  */
+#include "lwip/def.h"
 #include "lwip/netif.h"
+
+#define RMII_DEBUG(...)     printf(__VA_ARGS__)
 
 struct netif *rmii_lwip_init(uint clkmhz, uint rx0, uint rx1, uint crs, uint tx0, uint tx1, uint txen, uint mdclk, uint mdio);
 void rmii_lwip_poll(struct netif* netif);

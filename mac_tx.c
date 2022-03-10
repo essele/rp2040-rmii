@@ -15,10 +15,9 @@
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/dma.h"
+
 #include "mac_tx.pio.h"
-
 #include "mac_tx.h"
-
 #include "pio_utils.h"
 
 static uint tx_offset;          // so we know where the program loaded

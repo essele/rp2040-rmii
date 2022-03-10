@@ -19,9 +19,9 @@
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
 #include "hardware/irq.h"
+
 #include "mdio.h"
 #include "mdio.pio.h"
-
 #include "mac_tx.h"
 #include "mac_rx.h"
 
@@ -310,6 +310,3 @@ int mdio_init(uint pin_mdc, uint pin_mdio) {
     // Send the first read command (which the ISR or polling system will respond to)
     mdio_send_read_cmd(mdio_addr, MDIO_BASIC_STATUS);
 }
-
-
-

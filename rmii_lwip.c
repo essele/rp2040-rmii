@@ -233,9 +233,18 @@ void rmii_lwip_poll(struct netif* netif) {
 
             case LINK_UP_10FD:
             case LINK_UP_10HD:
+                netif_set_link_up(netif);
+#if MIB2_STATS
+                netif->link_speed = 10000000;
+#endif
+                break;
+
             case LINK_UP_100FD:
             case LINK_UP_100HD:
                 netif_set_link_up(netif);
+#if MIB2_STATS
+                netif->link_speed = 100000000;
+#endif
                 break;
 
             default:

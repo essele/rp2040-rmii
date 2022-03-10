@@ -17,10 +17,9 @@
 #include "hardware/dma.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
+
 #include "mac_rx.pio.h"
-
 #include "mac_rx.h"
-
 #include "pio_utils.h"
 
 static uint tx_offset;          // so we know where the program loaded

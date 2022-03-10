@@ -9,7 +9,6 @@
  * 
  */
 
-
 #define LINK_NO_CHANGE              0
 #define LINK_UP_10HD                1
 #define LINK_UP_10FD                2
