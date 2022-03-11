@@ -28,6 +28,7 @@ Still to do:
 
 Current WIP Status:
 
+- 150MHz receive for 10/100 seems to be working (compile time decision)
 - Some checksum and overrun errors when flood pinging (not convinced this isn't jumper-wire related)
 - Started #define's for chosing LWIP or not.
 
