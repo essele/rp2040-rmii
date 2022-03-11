@@ -13,11 +13,12 @@
 #include <string.h>
 #include "pico.h"
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/clocks.h"
-#include "clock.pio.h"
 
+#include "debug.h"
 #include "mdio.h"
 #include "mac_tx.h"
 #include "mac_rx.h"
@@ -116,9 +117,24 @@ err_t ethernetif_init(struct netif *netif)
     /* initialize the hardware */
     // TODO: init here rather than in main!
 
+#ifdef RMII_USE_MAC_ADDR
+    static uint8_t mac_addr[] = { RMII_USE_MAC_ADDR };
+#else 
+#ifdef RMII_USE_MAC_PREFIX
+    static uint8_t mac_addr[] = { RMII_USE_MAC_PREFIX, 0, 0, 0 };
+#else
+    static uint8_t mac_addr[] = { 0xa4, 0xdd, 0x7b, 0, 0, 0 };
+#endif
+    pico_unique_board_id_t board_id;
+    pico_get_unique_board_id(&board_id);
+    memcpy(&mac_addr[3], &board_id.id[5], 3);
+#endif
     netif->hwaddr_len = ETHARP_HWADDR_LEN;
-    memcpy(netif->hwaddr, fake_mac, ETHARP_HWADDR_LEN);
- 
+    memcpy(netif->hwaddr, mac_addr, ETHARP_HWADDR_LEN);
+
+    debug_printf("MAC address: %02x:%02x:%02x:%02x:%02x:%02x\r\n", mac_addr[0], mac_addr[1], 
+                    mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+
     netif->mtu = 1500;
     netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
   return ERR_OK;

@@ -16,6 +16,7 @@
 #include "hardware/pio.h"
 #include "hardware/dma.h"
 
+#include "debug.h"
 #include "mac_tx.pio.h"
 #include "mac_tx.h"
 #include "pio_utils.h"
@@ -41,7 +42,7 @@ static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uin
     pio_sm_config   c;
 
     int index = (speed == 100) ? duplex : 2 + duplex;
-    printf("Loading from index=%d (speed=%d duplex=%d)\r\n", index, speed, duplex);
+    debug_printf("Loading tx_pio for speed=%d duplex=%d\r\n", speed, duplex);
     struct pio_prog *prog = (struct pio_prog *)&tx_programs[index];
 
     tx_prog = (pio_program_t *)prog->program;
@@ -151,6 +152,25 @@ static inline uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t cur
 }
 
 /**
+ * @brief Print useful packet information for transmitted packets (during debugging)
+ * 
+ * This will output size, fcs and then the first 16 and last 8 bytes in any
+ * transmitted packet.
+ * 
+ * @param cmnt 
+ * @param p 
+ * @param length 
+ * @param fcs 
+ */
+static void dump_pkt_info(char *cmnt, uint8_t *p, int length, uint32_t fcs) {
+    printf("TX_PKT: %s len=%-4.4d fcs=%08x: ", cmnt, length, fcs);
+    for(int i=0; i < 16; i++) { printf("%02x ", p[i]); }
+    printf("... ");
+    for(int i=length-8; i < length; i++) { printf("%02x ", p[i]); }
+    printf("\r\n");
+}
+
+/**
  * @brief Setup DMA and state machine in reponse to the interface coming up
  * 
  * @param speed 
@@ -225,45 +245,6 @@ void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
     channel_config_set_dreq(&tx_dma_channel_config, pio_get_dreq(tx_pio, tx_sm, true));
     channel_config_set_transfer_data_size(&tx_dma_channel_config, DMA_SIZE_32);
     dma_channel_configure(tx_dma_chan, &tx_dma_channel_config, &tx_pio->txf[tx_sm], 0, 0, false);
-
-    //tx_dma_chan_hw->al1_ctrl |= (1 << 1);           // High priority!
-
-}
-
-
-void mac_tx_test() {
-        static uint8_t packet[1200] = {
-//        0x00, 0x00, 0x00, 0x00,             // FOr number of dibits
-//        0x00, 0x00, 0x00, 0x00,             // For number of padding bytes
-
-//        0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0xd5,     // preamble
-
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05,           // destination
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15,           // source
-        0x08, 0x00,                                   // ethernet type
-        0x45, 0x00,                                   // ip & flags
-        0x00, 0x54,                                   // total length (84)
-        0x00, 0x00,
-        0x40, 0x00,                                     // fragment offset?
-        0x40, 0x01,                                 // ttl64, icmp
-        0x2f, 0xcb,                                 // header checksum
-        0x0a, 0x37, 0x01, 0xfe,                     // source address
-        0x0a, 0x37, 0x01, 0xfd,                     // destination
-        0x08, 0x00, 0x76, 0x22,                     // ping, zero, checksum
-        0x00, 0x06, 0x00, 0x01,                     // id seqency
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,     // timestamp
-
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-//        0x00, 0x00, 0x00, 0x00,                         // spaxce for checksum
-    };
-
-    //printf("Sending ... ");
-    mac_tx_send(packet, sizeof(packet));
 }
 
 // --------------------------------------------------------------------------------
@@ -283,9 +264,10 @@ void mac_tx_send_pbuf(struct pbuf *p) {
     // If the state machine isn't enabled then the link is down
     // (Note this could change while we're in here!)
     if (!(tx_pio->ctrl & (1 << tx_sm))) {
-        printf("SM down, discarding\r\n");
+        debug_printf("Attempted send while interface down, discarding\r\n");
         return;
     }
+
     // We need to copy the packet to the next outgoing buffer (double buffered)
     // so we don't interfere with the currently transmitting one...
     outgoing = &outbufs[next_outgoing];
@@ -297,6 +279,11 @@ void mac_tx_send_pbuf(struct pbuf *p) {
     for(q=p; q != NULL; q=q->next) {
         // Make the the previous DMA has finished before we start a new one...
         while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+
+        if (length + q->len > MAX_ETHERNET_BYTES) {
+            debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
+            return;
+        }
 
         // For each pbuf ... DMA the data over so we can start on the fcs...
         dma_channel_set_read_addr(tx_copy_chan, q->payload, false);
@@ -338,6 +325,10 @@ void mac_tx_send_pbuf(struct pbuf *p) {
     // so SM will be gone, we shouldn't trigger in that case a it
     // will never complete.
 
+#if RMII_DEBUG && RMII_DEBUG_PKT_TX
+    dump_pkt_info("OK  ", outgoing->data, length+4, fcs);
+#endif
+
     // Now start the main dma...
     dma_channel_set_read_addr(tx_dma_chan, outgoing, false);
     dma_channel_set_trans_count(tx_dma_chan, dma_size, true);
@@ -359,13 +350,13 @@ void mac_tx_send(uint8_t *data, uint length) {
     // If the state machine isn't enabled then the link is down
     // (Note this could change while we're in here!)
     if (!(tx_pio->ctrl & (1 << tx_sm))) {
-        printf("SM down, discarding\r\n");
+        debug_printf("Attempted send while interface down, discarding\r\n");
         return;
     }
 
     // If we try to send a packet that's too big just discard it.
     if (length > MAX_ETHERNET_BYTES) {
-        printf("TX packet too big, discarding\r\n");
+        debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
         return;
     }
     // We need to copy the packet to the next outgoing buffer (double buffered)

@@ -18,6 +18,7 @@
 #include "hardware/irq.h"
 #include "hardware/sync.h"
 
+#include "debug.h"
 #include "mac_rx.pio.h"
 #include "mac_rx.h"
 #include "pio_utils.h"
@@ -112,6 +113,25 @@ struct rx_stats rxstats;
 
 void print_rx_stats() {
     printf("pkts=%d oob=%d fcs=%d big=%d\r\n", rxstats.packets, rxstats.oob, rxstats.fcs, rxstats.big);
+}
+
+/**
+ * @brief Print useful packet information for received packets (during debugging)
+ * 
+ * This will output size, fcs and then the first 16 and last 8 bytes in any
+ * recevied packet.
+ * 
+ * @param cmnt 
+ * @param p 
+ * @param length 
+ * @param fcs 
+ */
+static void dump_pkt_info(char *cmnt, uint8_t *p, int length, uint32_t fcs) {
+    printf("RX_PKT: %s len=%-4.4d fcs=%08x: ", cmnt, length, fcs);
+    for(int i=0; i < 16; i++) { printf("%02x ", p[i]); }
+    printf("... ");
+    for(int i=length-8; i < length; i++) { printf("%02x ", p[i]); }
+    printf("\r\n");
 }
 
 // We need to keep the identification of free frames as quick as possible
@@ -295,7 +315,11 @@ void __time_critical_func(pio_rx_isr)() {
         received->length--;
     } else {
         rxstats.fcs++;
-        printf("CHECKSUM ERROR: %08x (length=%d): ", received->checksum, received->length);
+        debug_printf("RX CHECKSUM ERROR: %08x (length=%d)\r\n", received->checksum, received->length);
+#if RMII_DEBUG && RMII_DEBUG_PKT_RX
+            dump_pkt_info("FCS!", received->data, received->length, received->checksum);
+#endif
+
         int i = 0;
         for (; i < 8; i++) {
             printf("%02x ", received->data[i]);
@@ -322,6 +346,10 @@ void __time_critical_func(pio_rx_isr)() {
     // Now add the packet to the ready list...
     rx_add_to_ready_list_noirq(received);
     rxstats.packets++;
+
+#if RMII_DEBUG && RMII_DEBUG_PKT_RX
+    dump_pkt_info("OK  ", received->data, received->length, ETHER_CHECKSUM0);
+#endif
 }
 
 //
@@ -444,14 +472,11 @@ void mac_rx_init(uint pin_rx0, uint pin_crs) {
     channel_config_set_write_increment(&rx_dma_channel_config, true);
     channel_config_set_dreq(&rx_dma_channel_config, pio_get_dreq(rx_pio, rx_sm, false));
     channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_32);
-//    channel_config_set_transfer_data_size(&rx_dma_channel_config, DMA_SIZE_8);
-
 
     // Dummy configure, so we only have to change write address later...
     dma_channel_configure(
         rx_dma_chan, &rx_dma_channel_config,
         NULL,
-//        ((uint8_t*)&rx_pio->rxf[rx_sm]) + 3,
         ((uint8_t*)&rx_pio->rxf[rx_sm]),
         RX_MAX_BYTES / 4,
         false

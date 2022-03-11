@@ -17,6 +17,7 @@ add_executable(rp2040_rmii
     mac_rx.c mac_rx.h mac_rx.pio.h mac_rx.pio
     mac_tx.c mac_tx.h mac_tx.pio.h mac_tx.pio
     checksum.c checksum.h
+    debug.h
 )
 
 #pico_enable_stdio_usb(rp2040_rmii 1)
@@ -32,6 +33,33 @@ target_compile_definitions(rp2040_rmii PRIVATE
   PICO_DEFAULT_UART_RX_PIN=17
   PICO_DEFAULT_UART=0
   RMII_USE_LWIP=1
+
+  #
+  # Main debugging on/off switch (if true), this turns all the others off
+  # if disabled.
+  #
+  RMII_DEBUG=0
+
+  #
+  # Look at a few bytes of the packets coming in or going out, this will
+  # have a significant impact on performance as it's generally printed
+  # in an isr or time critical function.
+  #
+  RMII_DEBUG_PKT_RX=1
+  RMII_DEBUG_PKT_TX=1
+
+  #
+  # Show LINK UP and DOWN changes
+  #
+  RMII_DEBUG_LINK=1
+
+  #
+  # MAC_ADDR:   overrides the complete MAC address
+  # MAC_PREFIX: defined the first 3 octets, remaining based on uniqueid
+  # DEFAULT:    use RPI prefix, remaining based on uniqieid
+  #
+  #RMII_USE_MAC_ADDR=0x45,0x46,0x47,0x48,0x49,0x4a
+  #RMII_USE_MAC_PREFIX=0x44,0x44,0x44
 )
 
 # Make sure we can find lwipopts.h...
@@ -43,5 +71,6 @@ target_link_libraries(rp2040_rmii
   hardware_dma
   hardware_interp
   hardware_sync
+  pico_unique_id
   lwip
 )

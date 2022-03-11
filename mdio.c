@@ -20,6 +20,7 @@
 #include "hardware/pio.h"
 #include "hardware/irq.h"
 
+#include "debug.h"
 #include "mdio.h"
 #include "mdio.pio.h"
 #include "mac_tx.h"
@@ -173,7 +174,9 @@ static int mdio_handler() {
         if (new_status != last_status) {
             // The link has gone up or down... if down then unload
             if (!new_status) {
-                printf("Link DOWN\r\n");
+#if RMII_DEBUG_LINK
+                debug_printf("Link DOWN\r\n");
+#endif
                 if (sm_loaded) {
                     mac_tx_down();
                     mac_rx_down();
@@ -184,8 +187,9 @@ static int mdio_handler() {
                 uint mode = (mdio_read(mdio_addr, MDIO_SPECIAL_STATUS) & SPEED) >> 2;
                 int speed = modes[mode].speed;
                 int duplex = modes[mode].duplex;
-                printf("Link UP, %s\r\n", modes[mode].description);
-
+#if RMII_DEBUG_LINK
+                debug_printf("Link UP, %s\r\n", modes[mode].description);
+#endif
                 if (!sm_loaded) {
                     mac_tx_up(speed, duplex);
                     mac_rx_up(speed);
@@ -263,7 +267,7 @@ int mdio_init(uint pin_mdc, uint pin_mdio) {
         if (rc != 0xffff) break;
     }
     if (i == 32) {
-        printf("No PHY detected, not starting rmii\r\n");
+        debug_printf("No PHY detected, not starting rmii\r\n");
         return 0;
     }
     mdio_addr = i;
@@ -276,12 +280,12 @@ int mdio_init(uint pin_mdc, uint pin_mdio) {
     struct phy *p = phys;
     while (1) {
         if (p->id2 == 0) {
-            printf("PHY@addr=%d: unknown, using basic capabilities (id2=0x%04x)\r\n", mdio_addr, rc);
+            debug_printf("PHY@addr=%d: unknown, using basic capabilities (id2=0x%04x)\r\n", mdio_addr, rc);
             mdio_type = TYPE_BASIC;
             break;
         }
         if ((p->id2 & 0xfff0) == (rc & 0xfff0)) {
-            printf("PHY@addr=%d: %s (revision %x)\r\n", mdio_addr, p->description, revision);
+            debug_printf("PHY@addr=%d: %s (revision %x)\r\n", mdio_addr, p->description, revision);
             mdio_type = p->type;
             break;
         }

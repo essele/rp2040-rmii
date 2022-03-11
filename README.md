@@ -7,6 +7,7 @@ This is very much work-in-progress and will develop over time, currently working
 - Pico clocked at 100MHz
 - No need for a fully dedicated core
 - Works with LAN8720
+- LWIP Integration
 - 100BASE-TX send and receive, both half & full duplex
 - 10BASE-T send and receive, both half & full duplex
 - TX inter-packet-gap honored for full duplex
@@ -21,14 +22,12 @@ This is very much work-in-progress and will develop over time, currently working
 
 Still to do:
 
-- LWIP integration
 - Support for 150MHz clocking
 - Support for RTL8201 
 - Option to drop IRQ's and dedicate a core to this
 
 Current WIP Status:
 
-- LWIP working, DHCP working fine. Zero-copy done on RX side. TX one copy.
 - Some checksum and overrun errors when flood pinging (not convinced this isn't jumper-wire related)
 - Started #define's for chosing LWIP or not.
 
