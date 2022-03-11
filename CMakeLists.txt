@@ -1,37 +1,40 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.12)
 
+# Pull in SDK (must be before project)
 include(pico_sdk_import.cmake)
 include(pico_extras_import.cmake)
 
-project(rp2040_rmii_project C CXX ASM)
+project(rmii_project C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+# Initialize the SDK
 pico_sdk_init()
 
+add_library(rmii INTERFACE)
 
-add_executable(rp2040_rmii
-    main.c
-    rmii_lwip.c rmii_lwip.h
-    mdio.c mdio.h mdio.pio.h mdio.pio
-    mac_rx.c mac_rx.h mac_rx.pio.h mac_rx.pio
-    mac_tx.c mac_tx.h mac_tx.pio.h mac_tx.pio
-    checksum.c checksum.h
-    debug.h
+target_sources(rmii INTERFACE
+    ${CMAKE_CURRENT_LIST_DIR}/rmii_lwip.c 
+    ${CMAKE_CURRENT_LIST_DIR}/rmii_lwip.h
+    ${CMAKE_CURRENT_LIST_DIR}/mdio.c 
+    ${CMAKE_CURRENT_LIST_DIR}/mdio.h 
+    ${CMAKE_CURRENT_LIST_DIR}/mdio.pio
+    ${CMAKE_CURRENT_LIST_DIR}/mac_rx.c 
+    ${CMAKE_CURRENT_LIST_DIR}/mac_rx.h 
+    ${CMAKE_CURRENT_LIST_DIR}/mac_rx.pio
+    ${CMAKE_CURRENT_LIST_DIR}/mac_tx.c 
+    ${CMAKE_CURRENT_LIST_DIR}/mac_tx.h 
+    ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio
+    ${CMAKE_CURRENT_LIST_DIR}/checksum.c 
+    ${CMAKE_CURRENT_LIST_DIR}/checksum.h
+    ${CMAKE_CURRENT_LIST_DIR}/debug.h
 )
 
-#pico_enable_stdio_usb(rp2040_rmii 1)
-#pico_enable_stdio_uart(rp2040_rmii 0)   # why does this break it? (should it be 1?)
-pico_add_extra_outputs(rp2040_rmii)
+pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mdio.pio)
+pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_rx.pio)
+pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
 
-pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mdio.pio)
-pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mac_rx.pio)
-pico_generate_pio_header(rp2040_rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
-
-target_compile_definitions(rp2040_rmii PRIVATE
-  PICO_DEFAULT_UART_TX_PIN=16
-  PICO_DEFAULT_UART_RX_PIN=17
-  PICO_DEFAULT_UART=0
+target_compile_definitions(rmii INTERFACE
   RMII_USE_LWIP=1
 
   #
@@ -63,9 +66,9 @@ target_compile_definitions(rp2040_rmii PRIVATE
 )
 
 # Make sure we can find lwipopts.h...
-target_include_directories(rp2040_rmii PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+target_include_directories(rmii INTERFACE ${CMAKE_CURRENT_LIST_DIR})
 
-target_link_libraries(rp2040_rmii 
+target_link_libraries(rmii INTERFACE
   pico_stdlib 
   hardware_pio
   hardware_dma
@@ -74,3 +77,29 @@ target_link_libraries(rp2040_rmii
   pico_unique_id
   lwip
 )
+
+#------------------------------------------------------------------------------
+# Now see if we need to add the test target (only done if we are the top level
+# project (i.e. not being included into something else.)
+#------------------------------------------------------------------------------
+
+get_directory_property(hasParent PARENT_DIRECTORY)
+if(NOT hasParent)
+
+add_executable(test
+    main.c
+)
+
+target_compile_definitions(test PRIVATE
+  PICO_DEFAULT_UART_TX_PIN=16
+  PICO_DEFAULT_UART_RX_PIN=17
+  PICO_DEFAULT_UART=0
+)
+
+#pico_enable_stdio_usb(test 1)
+pico_enable_stdio_uart(test 1)
+pico_add_extra_outputs(test)
+
+target_link_libraries(test pico_stdlib rmii)
+
+endif()
