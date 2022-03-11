@@ -55,7 +55,7 @@ My intended use for this is actually a custom board, so I'm not ultimately const
 
 I believe there are two ways this could be clocked...
 
-1. Feeding the 50MHz LAN8720 clock into the RP2040 XIN pin, this can then be fed to the PLL and you can recreate all the normal clocks (scaling up to 1200MHz should give you the ability to generate 48MHz, 100MHz, 125Mhz etc. quite easily.) This removes the need for a crystal for the RP2040, but you do need one for the PHY.
+1. Feeding the 50MHz LAN8720 clock into the RP2040 XIN pin, this can then be fed to the PLL and you can recreate all the normal clocks (scaling up to 1200MHz should give you the ability to generate 48MHz, 100MHz, 150Mhz etc. quite easily.) This removes the need for a crystal for the RP2040, but you do need one for the PHY.
 2. Generating the 50MHz clock on the RP2040 (gpout) and feeding it to the PHY. This means you can use a standard 12MHz crystal and have the usb bootloader still work.
 
 In either case you need to clock the CPU in the RP2040 at a multiple of 50MHz and it must be at least 100MHz to allow the packet end detection in the PIO. So you are really limited to 100MHz, 150MHz, 200MHz etc. All my testing is at 100MHz currently, although I do plan to include 150MHz support.
