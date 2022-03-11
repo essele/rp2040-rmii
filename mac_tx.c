@@ -280,10 +280,10 @@ void mac_tx_send_pbuf(struct pbuf *p) {
         // Make the the previous DMA has finished before we start a new one...
         while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
 
-        if (length + q->len > MAX_ETHERNET_BYTES) {
-            debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
-            return;
-        }
+//        if (length + q->len > MAX_ETHERNET_BYTES) {
+//            debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
+//            return;
+//        }
 
         // For each pbuf ... DMA the data over so we can start on the fcs...
         dma_channel_set_read_addr(tx_copy_chan, q->payload, false);

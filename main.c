@@ -14,12 +14,16 @@
 
 const uint LED_PIN = 25;
 
+// TODO: move this somewhere else...
+#ifndef RMII_CLK_MHZ
+#define RMII_CLK_MHZ 100
+#endif
 
 
 int main() {
     // Set the system clock so we are a multiple of 50Mhz, this will impact the
     // PIO state machines to the code will be different for different frequencies.
-    set_sys_clock_khz(100000, true);
+    set_sys_clock_khz(RMII_CLK_MHZ * 1000, true);
 
     stdio_init_all();  
    
@@ -27,7 +31,7 @@ int main() {
 	gpio_set_dir(LED_PIN, GPIO_OUT);
 
 
-    struct netif *nif = rmii_lwip_init(100, 26, 27, 28, 13, 14, 15, 18, 19);
+    struct netif *nif = rmii_lwip_init(150, 26, 27, 28, 13, 14, 15, 18, 19);
 
 
 

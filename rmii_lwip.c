@@ -281,11 +281,12 @@ struct netif *rmii_lwip_init(uint clkmhz, uint rx0, uint rx1, uint crs, uint tx0
     // New approach ... just clock the pin using the clk_sys value then we will hopefully
     // be in sync and not have any variation in phase between clk_sys and the output.
     //
-    // NOTE: I'm assuming this will also work for 150MHz but we'll need to use the duty
-    // cycle fix thing because of the divide by odd number (3).
-    //
-    clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 2);
-    clocks_hw->clk[clk_gpout0].ctrl |= CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS;
+#if (RMII_CLK_MHZ == 150)
+        clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 3);
+        clocks_hw->clk[clk_gpout0].ctrl |= CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS;
+#else
+        clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 2);
+#endif
 
     // We prioritise DMA... both read and write...
     //bus_ctrl_hw->priority |= (1 << 12) | (1 << 8);

@@ -47,8 +47,13 @@ static inline void mdio_program_init(PIO pio, uint sm, uint offset, uint pin_mdc
     // At full speed (2.5Mhz) we get some spurious issues where reads fail
     // it's fine if you slow it down slightly...
     // Ideal would be /10 (100Mhz down to 10Mhz, then 4 cycles per bit = 2.5Mz)
-    // But we use /12 (which results in 2.08Mhz)
-    sm_config_set_clkdiv(&c, 12); 
+    // But we use /12 (which results in 2.08Mhz at 100MHz)
+    // And /18 (for the same result at 150MHz)
+#if (RMII_CLK_MHZ == 150)
+        sm_config_set_clkdiv(&c, 18); 
+#else
+        sm_config_set_clkdiv(&c, 12); 
+#endif
 
     // Load our configuration, and jump to the start of the program
     pio_sm_init(pio, sm, offset, &c);

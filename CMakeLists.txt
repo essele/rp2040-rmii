@@ -37,11 +37,13 @@ pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
 target_compile_definitions(rmii INTERFACE
   RMII_USE_LWIP=1
 
+  RMII_CLK_MHZ=150
+
   #
   # Main debugging on/off switch (if true), this turns all the others off
   # if disabled.
   #
-  RMII_DEBUG=0
+  RMII_DEBUG=1
 
   #
   # Look at a few bytes of the packets coming in or going out, this will
@@ -49,7 +51,7 @@ target_compile_definitions(rmii INTERFACE
   # in an isr or time critical function.
   #
   RMII_DEBUG_PKT_RX=1
-  RMII_DEBUG_PKT_TX=1
+  RMII_DEBUG_PKT_TX=0
 
   #
   # Show LINK UP and DOWN changes

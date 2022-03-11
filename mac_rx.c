@@ -30,10 +30,17 @@ pio_program_t *tx_prog;         // so we know which one it was
 // We're going to do the initialisation of the PIO RX code in here so we need a way to select
 // from the different programs needed for different situations...
 //
+#if (RMII_CLK_MHZ == 100)
 const static struct pio_prog rx_programs[] = {
     { PIO_PROG(mac_rx_10) },
     { PIO_PROG(mac_rx_100) },
 };
+#else
+const static struct pio_prog rx_programs[] = {
+    { PIO_PROG(mac_rx_10_150MHz) },
+    { PIO_PROG(mac_rx_100_150MHz) },
+};
+#endif
 
 static uint rx_offset;
 pio_program_t *rx_prog;
@@ -319,17 +326,6 @@ void __time_critical_func(pio_rx_isr)() {
 #if RMII_DEBUG && RMII_DEBUG_PKT_RX
             dump_pkt_info("FCS!", received->data, received->length, received->checksum);
 #endif
-
-        int i = 0;
-        for (; i < 8; i++) {
-            printf("%02x ", received->data[i]);
-        }
-        printf("... ");
-        i = received->length - 8;
-        for (; i < received->length; i++) {
-            printf("%02x ", received->data[i]);
-        }
-        printf("\r\n");
         // We need to return this packet and don't process any further
         rx_add_to_free_list_noirq(received);
         return;

@@ -47,7 +47,7 @@ start:
 ;
 ; So we have three pins: rx0 and rx1 as input, and crs as jmp
 
-; First wait for CRS to go low... this needs to be for 40 cycles (4 clocks) to
+; First wait for CRS to go low... this needs to be for 40 cycles (2 clocks) to
 ; avoid the toggling at the end of the packet.
 .wrap_target
 idlestart:
@@ -75,6 +75,104 @@ start:
     in pins, 2 [19]         ; 20 cycles (first dibit)
     in pins, 2              ; 1 cycle (second dibit)
     jmp pin start [18]      ; loop making 20 in total
+
+; Now we add enough to ensure any bytes over a 32bit word are pushed...
+    in null, 4
+    in null, 8
+    in null, 8
+    irq wait 0 rel
+
+; And clear anything left over
+    mov isr, null
+.wrap
+
+;------------------------------------------------------------------------------
+; 150MHz Versions
+;
+; We have three instructions per cycle, so generally do as above but wait an
+; extra cycle each time
+;------------------------------------------------------------------------------
+
+.program mac_rx_100_150MHz
+; 
+; So we have three pins: rx0 and rx1 as input, and crs as jmp
+; We are running at 100Mhz, so we have two cycles per clock!
+; We first need to wait for crs to be low for two mac cycles (4 clock)
+.wrap_target
+idlewait:
+    jmp pin idlewait [2]
+    jmp pin idlewait [2]
+
+; Theoretically we now have an idle situation...
+; Now we wait for crs to go high....
+
+crswait:
+    jmp pin highwait [2]
+    jmp crswait [2]
+
+; Now we can look for both pins high
+highwait:
+    wait 1 pin 0 [2]
+    wait 1 pin 1 [1]
+    wait 1 gpio 21          ; Make sure we are on the right clock edge
+
+; At 100M we can check RXDV each time and it's fine, not so at
+; 10M though...
+
+start:
+    in pins, 2
+    jmp pin start [1]
+
+; Since we are now operating at 32 bits we need to make sure anything
+; in the ISR is pushed (three instructions is nasty though!)
+    in null, 8
+    in null, 8
+    in null, 8
+    irq wait 0 rel
+
+; And clear anything out that's left over (overflowed from the above)
+    mov isr, null
+.wrap
+
+; For 10meg at 150MHz we have 30 cycles per one cycle...
+;
+;
+.program mac_rx_10_150MHz
+; 
+; For 10M we stick at a /1 clkdiv, so we can synchronise with the
+; clock, otherwise we're at random parts of the cycle
+;
+; So we have three pins: rx0 and rx1 as input, and crs as jmp
+
+; First wait for CRS to go low... this needs to be for 60 cycles (2 clocks) to
+; avoid the toggling at the end of the packet.
+.wrap_target
+idlestart:
+    set x 29
+idlewait:
+    jmp pin idlestart
+    jmp x-- idlewait
+
+; Now wait for crs to ho high again to signal the start of the packet
+crswait:
+    jmp pin highwait
+    jmp crswait
+
+; Now wait for both pins to go high, once we have that we wait a bit to put
+; us inside the next data cycle by a couple of clocks
+highwait:
+    wait 1 pin 0
+    wait 1 pin 1 [26]
+    nop [9]
+
+; We can ready the first dibit in the first 20 cycles, then the second dibit
+; as well as sampling CRS to check for the end of the packet, we will always
+; bring in 4 bits too many (zeros) so we just account for that in our padding
+; and it should work out nicely.
+start:
+    in pins, 2 [29]         ; 20 cycles (first dibit)
+    in pins, 2              ; 1 cycle (second dibit)
+    jmp pin start [28]      ; loop making 20 in total
 
 ; Now we add enough to ensure any bytes over a 32bit word are pushed...
     in null, 4
