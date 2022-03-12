@@ -4,14 +4,14 @@ An ethernet MAC implementation for the RP2040 / Pico
 
 This is very much work-in-progress and will develop over time, currently working is:
 
-- Pico clocked at 100MHz
+- Pico clocked at 100MHz or 150MHz
 - No need for a fully dedicated core
 - Works with LAN8720
 - LWIP Integration
 - 100BASE-TX send and receive, both half & full duplex
 - 10BASE-T send and receive, both half & full duplex
 - TX inter-packet-gap honored for full duplex
-- Half duplex TX carrier detection and inter-packet-gap
+- Half duplex TX carrier detection and inter-packet-gap (see below)
 - Both TX & RX use 32bit DMA to improve performance
 - PIO based mdio interface
 - Auto detection of phy type and address
@@ -22,15 +22,17 @@ This is very much work-in-progress and will develop over time, currently working
 
 Still to do:
 
-- Support for 150MHz clocking
 - Support for RTL8201 
 - Option to drop IRQ's and dedicate a core to this
 
 Current WIP Status:
 
-- 150MHz receive for 10/100 seems to be working (compile time decision)
+- 150MHz working (compile time decision)
+- However, IPG at 10meg/half not long enough ... run out of PIO instructions!
 - Some checksum and overrun errors when flood pinging (not convinced this isn't jumper-wire related)
+- Other possible cause is phase different between generated 50MHz, there shouldn't be one any more so need to test for this.
 - Started #define's for chosing LWIP or not.
+- Started #define's for debugging.
 
 ## Background
 
@@ -55,10 +57,10 @@ My intended use for this is actually a custom board, so I'm not ultimately const
 
 I believe there are two ways this could be clocked...
 
-1. Feeding the 50MHz LAN8720 clock into the RP2040 XIN pin, this can then be fed to the PLL and you can recreate all the normal clocks (scaling up to 1200MHz should give you the ability to generate 48MHz, 100MHz, 150Mhz etc. quite easily.) This removes the need for a crystal for the RP2040, but you do need one for the PHY.
+1. Feeding the 50MHz LAN8720 clock into the RP2040 XIN pin, this can then be fed to the PLL and you can recreate all the normal clocks (scaling up to 1200MHz should give you the ability to generate 48MHz, 100MHz, 125Mhz etc. quite easily.) This removes the need for a crystal for the RP2040, but you do need one for the PHY.
 2. Generating the 50MHz clock on the RP2040 (gpout) and feeding it to the PHY. This means you can use a standard 12MHz crystal and have the usb bootloader still work.
 
-In either case you need to clock the CPU in the RP2040 at a multiple of 50MHz and it must be at least 100MHz to allow the packet end detection in the PIO. So you are really limited to 100MHz, 150MHz, 200MHz etc. All my testing is at 100MHz currently, although I do plan to include 150MHz support.
+In either case you need to clock the CPU in the RP2040 at a multiple of 50MHz and it must be at least 100MHz to allow the packet end detection in the PIO. So you are really limited to 100MHz, 150MHz, 200MHz etc. Most of my testing has been at 100MHz, although 150MHz is now working and seems stable.
 
 I've used the second approach for my testing, you can make a minor tweak to the breakout board to get this to work.
 
