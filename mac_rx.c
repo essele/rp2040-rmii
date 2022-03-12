@@ -30,15 +30,15 @@ pio_program_t *tx_prog;         // so we know which one it was
 // We're going to do the initialisation of the PIO RX code in here so we need a way to select
 // from the different programs needed for different situations...
 //
-#if (RMII_CLK_MHZ == 100)
-const static struct pio_prog rx_programs[] = {
-    { PIO_PROG(mac_rx_10) },
-    { PIO_PROG(mac_rx_100) },
-};
-#else
+#if (RMII_CLK_MHZ == 150)
 const static struct pio_prog rx_programs[] = {
     { PIO_PROG(mac_rx_10_150MHz) },
     { PIO_PROG(mac_rx_100_150MHz) },
+};
+#else
+const static struct pio_prog rx_programs[] = {
+    { PIO_PROG(mac_rx_10) },
+    { PIO_PROG(mac_rx_100) },
 };
 #endif
 
@@ -93,7 +93,6 @@ static inline void mac_rx_unload(PIO pio, uint sm) {
 
 
 
-
 uint                rx_pin_rx0;
 uint                rx_pin_crs;
 
@@ -122,24 +121,7 @@ void print_rx_stats() {
     printf("pkts=%d oob=%d fcs=%d big=%d\r\n", rxstats.packets, rxstats.oob, rxstats.fcs, rxstats.big);
 }
 
-/**
- * @brief Print useful packet information for received packets (during debugging)
- * 
- * This will output size, fcs and then the first 16 and last 8 bytes in any
- * recevied packet.
- * 
- * @param cmnt 
- * @param p 
- * @param length 
- * @param fcs 
- */
-static void dump_pkt_info(char *cmnt, uint8_t *p, int length, uint32_t fcs) {
-    printf("RX_PKT: %s len=%-4.4d fcs=%08x: ", cmnt, length, fcs);
-    for(int i=0; i < 16; i++) { printf("%02x ", p[i]); }
-    printf("... ");
-    for(int i=length-8; i < length; i++) { printf("%02x ", p[i]); }
-    printf("\r\n");
-}
+
 
 // We need to keep the identification of free frames as quick as possible
 // since it's done in the ISR. So we'll keep a singly linked list, we can
@@ -324,7 +306,7 @@ void __time_critical_func(pio_rx_isr)() {
         rxstats.fcs++;
         debug_printf("RX CHECKSUM ERROR: %08x (length=%d)\r\n", received->checksum, received->length);
 #if RMII_DEBUG && RMII_DEBUG_PKT_RX
-            dump_pkt_info("FCS!", received->data, received->length, received->checksum);
+            dump_pkt_info("RX FCS!", received->data, received->length, received->checksum);
 #endif
         // We need to return this packet and don't process any further
         rx_add_to_free_list_noirq(received);
@@ -344,7 +326,7 @@ void __time_critical_func(pio_rx_isr)() {
     rxstats.packets++;
 
 #if RMII_DEBUG && RMII_DEBUG_PKT_RX
-    dump_pkt_info("OK  ", received->data, received->length, ETHER_CHECKSUM0);
+    dump_pkt_info("RX OK  ", received->data, received->length, ETHER_CHECKSUM0);
 #endif
 }
 

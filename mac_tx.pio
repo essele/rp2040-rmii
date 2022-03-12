@@ -108,3 +108,114 @@ waitloop:
     nop [15]                side 0  ; 16 cycles
     jmp x-- waitloop [15]   side 0  ; 16 cycles (30 x 32 = 960)
 .wrap
+
+
+;------------------------------------------------------------------
+; 150 MHz Versions
+;------------------------------------------------------------------
+; Working...
+.program mac_tx_100hd_150MHz 
+; For half duplex we should check crs to ensure it's been low for
+; at least 96 cycles before we try and send... at 150MHz that needs
+; to be 144 cycles
+.side_set 1 opt
+.wrap_target
+idle_start:
+    set x, 23
+idle_wait:
+    jmp pin, idle_start [2]     ; if crs goes high we start again
+    jmp x--, idle_wait [2]      ; count down for 24 (144 cycles)
+
+data_wait:
+    jmp pin, idle_start         ; if crs goes high start again
+    mov x, !status
+    jmp !x, data_wait           ; loop if nothing in fifo 
+
+    out x, 32                   ; number of bit pairs
+    wait 0 gpio 21              ; make sure we're on the right clock edge
+
+output:
+    out pins, 2 side 1          ; data out and txen (side) high
+    jmp x-- output [1]             ; loop for x dibits
+    set pins, 0 side 0          ; take everything low
+
+    mov osr, null               ; throw away anything left
+    out null, 32
+.wrap
+
+; Working....
+.program mac_tx_100fd_150MHz
+.side_set 1 opt
+
+.wrap_target
+    out x, 32                   ; number of bit pairs
+    wait 0 gpio 21              ; make sure we're on the right clock edge
+
+output:
+    out pins, 2 side 1          ; data out and txen (side) high
+    jmp x-- output [1]          ; loop for x dibits
+    set pins, 0 side 0          ; take everything low
+
+    mov osr, null               ; throw away anything left
+    out null, 32
+
+    set x, 17                   ; 18x16 = 3x96 (150Mhz)
+waitloop:
+    nop [7]
+    jmp x-- waitloop [7]
+.wrap
+
+.program mac_tx_10hd_150MHz
+; For half duplex we should check crs to ensure it's been low for
+; at least 96 bit cycles before we try and send, this is 960 cycles
+; at our clock speed.
+;
+; TODO: at 150MHz we don't wait long enough ... how do we fix that??
+; Need to wait 1440 cycles, no more instructions available!
+;
+.side_set 1
+.wrap_target
+idle_start:
+    set x, 29                   side 0
+idle_wait:
+    jmp pin, idle_start [15]    side 0  ; if crs goes high we start again
+    jmp x--, idle_wait [15]     side 0  ; count down for 30 * 32 cycles (960)
+
+data_wait:
+    jmp pin, idle_start         side 0  ; if crs goes high start again
+    mov x, !status              side 0
+    jmp !x, data_wait           side 0  ; loop if nothing in fifo 
+
+    out x, 32                   side 0  ; number of bit pairs
+    wait 0 gpio 21              side 0  ; make sure we're on the right clock edge
+
+output:
+    out pins, 2 side 1 [14]      ; data out and txen (side) high
+    jmp x-- output [14]          side 1  ; loop for x dibits
+    set pins, 0                 side 0  ; take everything low
+
+    mov osr, null               side 0  ; throw away anything left
+    out null, 32                side 0
+.wrap
+
+; Working
+.program mac_tx_10fd_150MHz
+.side_set 1
+
+.wrap_target
+    out x, 32               side 0  ; number of bit pairs
+    wait 0 gpio 21          side 0  ; make sure we're on the right clock edge
+
+output:
+    out pins, 2 [14]        side 1  ; data out and txen (side) high
+    jmp x-- output [14]     side 1  ; loop for x dibits
+    set pins, 0             side 0  ; take everything low
+
+    mov osr, null           side 0  ; throw away anything left
+    out null, 32            side 0
+
+    set x, 29               side 0  ; 24x8 = 2x96 (100Mhz)
+waitloop:
+    nop [15]                side 0  ; 16 cycles
+    jmp x-- waitloop [15]   side 0  ; 16 cycles (30 x 32 = 960)
+.wrap

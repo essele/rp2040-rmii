@@ -178,16 +178,6 @@ void rmii_lwip_poll(struct netif* netif) {
     rmii_pbuf_t *cp;
     
     while((frame = rx_get_ready_frame())) {
-        // Try to allocate some pbufs for the frame, if not give the frame back and
-        // return...
-        /*
-        p = pbuf_alloc(PBUF_RAW, frame->length, PBUF_POOL);
-        if (!p) {
-            rx_add_to_free_list(frame);
-            printf("PBUF ALLOCATION FAILED.\r\n");
-            return;
-        }
-        */
         cp = (rmii_pbuf_t *)LWIP_MEMPOOL_ALLOC(RX_POOL);
         if (!cp) {
             rx_add_to_free_list(frame);

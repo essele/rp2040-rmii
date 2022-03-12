@@ -178,7 +178,7 @@ static int mdio_handler() {
                 debug_printf("Link DOWN\r\n");
 #endif
                 if (sm_loaded) {
-    //                mac_tx_down();
+                    mac_tx_down();
                     mac_rx_down();
                     sm_loaded = 0;
                 }
@@ -191,7 +191,7 @@ static int mdio_handler() {
                 debug_printf("Link UP, %s\r\n", modes[mode].description);
 #endif
                 if (!sm_loaded) {
-    //                mac_tx_up(speed, duplex);
+                    mac_tx_up(speed, duplex);
                     mac_rx_up(speed);
                     sm_loaded = 1;
                 }

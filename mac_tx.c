@@ -28,12 +28,21 @@ pio_program_t *tx_prog;         // so we know which one it was
 // We're going to do the initialisation of the PIO TX code in here so we need a way to select
 // from the different programs needed for different situations...
 //
+#if (RMII_CLK_MHZ == 150)
+const static struct pio_prog tx_programs[] = {
+    { PIO_PROG(mac_tx_100hd_150MHz) },
+    { PIO_PROG(mac_tx_100fd_150MHz) },
+    { PIO_PROG(mac_tx_10hd_150MHz) },
+    { PIO_PROG(mac_tx_10fd_150MHz) },
+};
+#else
 const static struct pio_prog tx_programs[] = {
     { PIO_PROG(mac_tx_100hd) },
     { PIO_PROG(mac_tx_100fd) },
     { PIO_PROG(mac_tx_10hd) },
     { PIO_PROG(mac_tx_10fd) },
 };
+#endif
 
 //
 // Load and configure the relevant PIO program depending on what's needed...
@@ -152,25 +161,6 @@ static inline uint32_t pkt_generate_fcs( uint8_t* data, int length, uint32_t cur
 }
 
 /**
- * @brief Print useful packet information for transmitted packets (during debugging)
- * 
- * This will output size, fcs and then the first 16 and last 8 bytes in any
- * transmitted packet.
- * 
- * @param cmnt 
- * @param p 
- * @param length 
- * @param fcs 
- */
-static void dump_pkt_info(char *cmnt, uint8_t *p, int length, uint32_t fcs) {
-    printf("TX_PKT: %s len=%-4.4d fcs=%08x: ", cmnt, length, fcs);
-    for(int i=0; i < 16; i++) { printf("%02x ", p[i]); }
-    printf("... ");
-    for(int i=length-8; i < length; i++) { printf("%02x ", p[i]); }
-    printf("\r\n");
-}
-
-/**
  * @brief Setup DMA and state machine in reponse to the interface coming up
  * 
  * @param speed 
@@ -280,10 +270,10 @@ void mac_tx_send_pbuf(struct pbuf *p) {
         // Make the the previous DMA has finished before we start a new one...
         while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
 
-//        if (length + q->len > MAX_ETHERNET_BYTES) {
-//            debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
-//            return;
-//        }
+        if (length + q->len > MAX_ETHERNET_BYTES) {
+            debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
+            return;
+        }
 
         // For each pbuf ... DMA the data over so we can start on the fcs...
         dma_channel_set_read_addr(tx_copy_chan, q->payload, false);
@@ -326,7 +316,7 @@ void mac_tx_send_pbuf(struct pbuf *p) {
     // will never complete.
 
 #if RMII_DEBUG && RMII_DEBUG_PKT_TX
-    dump_pkt_info("OK  ", outgoing->data, length+4, fcs);
+    dump_pkt_info("TX OK  ", outgoing->data, length+4, fcs);
 #endif
 
     // Now start the main dma...
