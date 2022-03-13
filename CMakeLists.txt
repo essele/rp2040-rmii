@@ -82,6 +82,11 @@ target_compile_definitions(rmii INTERFACE
   #
   #RMII_USE_MAC_ADDR=0x45,0x46,0x47,0x48,0x49,0x4a
   #RMII_USE_MAC_PREFIX=0x44,0x44,0x44
+
+  #
+  # Get LWIP to use our slightly faster checksum routine...
+  #
+  LWIP_CHKSUM=interp_ip_checksum
 )
 
 # Make sure we can find lwipopts.h...
