@@ -37,21 +37,38 @@ pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
 target_compile_definitions(rmii INTERFACE
   RMII_USE_LWIP=1
 
-  RMII_CLK_MHZ=150
+  #
+  # What speed to we expect to be running the processor at, so that
+  # we can adjust the PIO code and clock generation accordingly
+  #
+  RMII_SYS_MHZ=150
+
+  #
+  # Define the pins we're going to use
+  #
+  RMII_PIN_CLK=21
+  RMII_PIN_MDC=18
+  RMII_PIN_MDIO=19
+  RMII_PIN_RX0=26
+  RMII_PIN_RX1=27
+  RMII_PIN_CRS=28
+  RMII_PIN_TX0=13
+  RMII_PIN_TX1=14
+  RMII_PIN_TXEN=15
 
   #
   # Main debugging on/off switch (if true), this turns all the others off
   # if disabled.
   #
-  RMII_DEBUG=0
+  RMII_DEBUG=1
 
   #
   # Look at a few bytes of the packets coming in or going out, this will
   # have a significant impact on performance as it's generally printed
   # in an isr or time critical function.
   #
-  RMII_DEBUG_PKT_RX=1
-  RMII_DEBUG_PKT_TX=1
+  RMII_DEBUG_PKT_RX=0
+  RMII_DEBUG_PKT_TX=0
 
   #
   # Show LINK UP and DOWN changes

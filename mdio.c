@@ -238,16 +238,14 @@ int mdio_poll() {
 /**
  * @brief Setup and start the mmio PIO state machine
  * 
- * @param pin_mdc 
- * @param pin_mdio 
  * @return int 
  */
-int mdio_init(uint pin_mdc, uint pin_mdio) {
+int mdio_init() {
     uint offset;
 
     mdio_sm = pio_claim_unused_sm(mdio_pio, true);
     offset = pio_add_program(mdio_pio, &mdio_program);
-    mdio_program_init(mdio_pio, mdio_sm, offset, pin_mdc, pin_mdio);
+    mdio_program_init(mdio_pio, mdio_sm, offset);
 
     // Now pump some null data into the phy to make sure we're not half way through something
     // after a reset.

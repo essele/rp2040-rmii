@@ -1,3 +1,5 @@
+.define RMII_PIN_CLK 21     ;; TODO: this is a problem!
+
 .program mac_rx_100
 ; 
 ; So we have three pins: rx0 and rx1 as input, and crs as jmp
@@ -19,7 +21,7 @@ crswait:
 highwait:
     wait 1 pin 0 [1]
     wait 1 pin 1 [0]
-    wait 1 gpio 21          ; Make sure we are on the right clock edge
+    wait 1 gpio RMII_PIN_CLK          ; Make sure we are on the right clock edge
 
 ; At 100M we can check RXDV each time and it's fine, not so at
 ; 10M though...
@@ -114,7 +116,7 @@ crswait:
 highwait:
     wait 1 pin 0 [2]
     wait 1 pin 1 [1]
-    wait 1 gpio 21          ; Make sure we are on the right clock edge
+    wait 1 gpio RMII_PIN_CLK          ; Make sure we are on the right clock edge
 
 ; At 100M we can check RXDV each time and it's fine, not so at
 ; 10M though...

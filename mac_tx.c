@@ -28,7 +28,7 @@ pio_program_t *tx_prog;         // so we know which one it was
 // We're going to do the initialisation of the PIO TX code in here so we need a way to select
 // from the different programs needed for different situations...
 //
-#if (RMII_CLK_MHZ == 150)
+#if (RMII_SYS_MHZ == 150)
 const static struct pio_prog tx_programs[] = {
     { PIO_PROG(mac_tx_100hd_150MHz) },
     { PIO_PROG(mac_tx_100fd_150MHz) },
@@ -47,7 +47,7 @@ const static struct pio_prog tx_programs[] = {
 //
 // Load and configure the relevant PIO program depending on what's needed...
 //
-static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uint pin_crs, int speed, int duplex) {
+static inline int mac_tx_load(PIO pio, uint sm, int speed, int duplex) {
     pio_sm_config   c;
 
     int index = (speed == 100) ? duplex : 2 + duplex;
@@ -59,18 +59,18 @@ static inline int mac_tx_load(PIO pio, uint sm, uint pin_tx0, uint pin_txen, uin
     c = prog->config_func(tx_offset);
 
     // Map the state machine's OUT pin group to the two output pins 
-    sm_config_set_out_pins(&c, pin_tx0, 2);
-    sm_config_set_set_pins(&c, pin_tx0, 2);
-    sm_config_set_jmp_pin(&c, pin_crs);
+    sm_config_set_out_pins(&c, RMII_PIN_TX0, 2);
+    sm_config_set_set_pins(&c, RMII_PIN_TX0, 2);
+    sm_config_set_jmp_pin(&c, RMII_PIN_CRS);
     // txen is a side set pin...
-    sm_config_set_sideset_pins(&c, pin_txen);
+    sm_config_set_sideset_pins(&c, RMII_PIN_TXEN);
     // Set this pin's GPIO function (connect PIO to the pad)
-    pio_gpio_init(pio, pin_tx0);
-    pio_gpio_init(pio, pin_tx0+1);
-    pio_gpio_init(pio, pin_txen);
+    pio_gpio_init(pio, RMII_PIN_TX0);
+    pio_gpio_init(pio, RMII_PIN_TX1);
+    pio_gpio_init(pio, RMII_PIN_TXEN);
     // Set the pin direction to output at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_tx0, 2, true);      // output
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_txen, 1, true);     // output
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_TX0, 2, true);      // output
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_TXEN, 1, true);     // output
     // Set direction, autopull, and shift sizes
     sm_config_set_out_shift(&c, true, true, 32);      // shift right, autopull, 32 bits
     // We want to be able to check when the FIFO has anything in it
@@ -86,10 +86,6 @@ static inline void mac_tx_unload(PIO pio, uint sm) {
     pio_sm_clear_fifos(pio, sm);
     pio_remove_program(pio, tx_prog, tx_offset);
 }
-
-static uint                tx_pin_tx0;
-static uint                tx_pin_txen;
-static uint                tx_pin_crs;          // for carrier detection
 
 static PIO                 tx_pio = pio0;
 static uint                tx_sm;
@@ -169,7 +165,7 @@ void mac_tx_up(int speed, int duplex) {
     //
     // Setup and start the TX state machine
     //
-    mac_tx_load(tx_pio, tx_sm, tx_pin_tx0, tx_pin_txen, tx_pin_crs, speed, duplex);
+    mac_tx_load(tx_pio, tx_sm, speed, duplex);
     pio_sm_set_enabled(tx_pio, tx_sm, true);
 }
 
@@ -188,14 +184,7 @@ void mac_tx_down() {
     // Need to think about how we deal with this.
 }
 
-void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs) {
-    //
-    // Keep the pin details
-    //
-    tx_pin_tx0 = pin_tx0;
-    tx_pin_txen = pin_txen;
-    tx_pin_crs = pin_crs;
-
+void mac_tx_init() {
     //
     // Setup the preamble data in the outgoing packet, this will
     // stay constant.

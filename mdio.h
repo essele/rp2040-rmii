@@ -17,5 +17,5 @@
 #define LINK_DOWN                   5
 #define LINK_UP_UNKNOWN             99
 
-int mdio_init(uint pin_mdc, uint pin_mdio);
+int mdio_init();
 int mdio_poll();

@@ -262,20 +262,20 @@ void rmii_lwip_poll(struct netif* netif) {
     sys_check_timeouts();
 }
 
-struct netif *rmii_lwip_init(uint clkmhz, uint rx0, uint rx1, uint crs, uint tx0, uint tx1, uint txen, uint mdclk, uint mdio) {
-    assert(clkmhz == 100 || clkmhz == 150);
-    assert(rx1 == rx0 + 1);
-    assert(tx1 == tx0 + 1);
+struct netif *rmii_lwip_init() {
+    assert(RMII_SYS_MHZ == 100 || RMII_SYS_MHZ == 150);
+    assert(RMII_PIN_RX1 == RMII_PIN_RX0 + 1);
+    assert(RMII_PIN_TX1 == RMII_PIN_TX0 + 1);
 
     //
     // New approach ... just clock the pin using the clk_sys value then we will hopefully
     // be in sync and not have any variation in phase between clk_sys and the output.
     //
-#if (RMII_CLK_MHZ == 150)
-        clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 3);
+#if (RMII_SYS_MHZ == 150)
+        clock_gpio_init(RMII_PIN_CLK, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 3);
         clocks_hw->clk[clk_gpout0].ctrl |= CLOCKS_CLK_GPOUT0_CTRL_DC50_BITS;
 #else
-        clock_gpio_init(21, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 2);
+        clock_gpio_init(RMII_PIN_CLK, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 2);
 #endif
 
     // We prioritise DMA... both read and write...
@@ -284,13 +284,13 @@ struct netif *rmii_lwip_init(uint clkmhz, uint rx0, uint rx1, uint crs, uint tx0
     // Initialise the TX and RX modules...
 //    mac_tx_init(13, 15, 28);     // tx0=13, tx1=14, txen=15, crs=28
 //    mac_rx_init(26, 28);         // rx0=26, rx1=27, crs=28
-    mac_tx_init(tx0, txen, crs);
-    mac_rx_init(rx0, crs);
+    mac_tx_init();
+    mac_rx_init();
 
     // And start MDIO, monitor link status and speed, and load the
     // relevant tx and rx PIO modules as needed...
 //    mdio_init(18, 19);
-    mdio_init(mdclk, mdio);
+    mdio_init();
 
     // Timer 3 is running by default and it really high priority, so we need to
     // look at whether disabling this helps or not...

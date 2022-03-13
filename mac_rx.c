@@ -30,7 +30,7 @@ pio_program_t *tx_prog;         // so we know which one it was
 // We're going to do the initialisation of the PIO RX code in here so we need a way to select
 // from the different programs needed for different situations...
 //
-#if (RMII_CLK_MHZ == 150)
+#if (RMII_SYS_MHZ == 150)
 const static struct pio_prog rx_programs[] = {
     { PIO_PROG(mac_rx_10_150MHz) },
     { PIO_PROG(mac_rx_100_150MHz) },
@@ -48,7 +48,7 @@ pio_program_t *rx_prog;
 //
 // Load and configure the relevant PIO program depending on what's needed...
 //
-static inline int mac_rx_load(PIO pio, uint sm, uint pin_rx0, uint pin_crs, int speed) {
+static inline int mac_rx_load(PIO pio, uint sm, int speed) {
     pio_sm_config c;
 
     int index = (speed == 100) ? 1 : 0;
@@ -59,17 +59,17 @@ static inline int mac_rx_load(PIO pio, uint sm, uint pin_rx0, uint pin_crs, int 
     c = prog->config_func(rx_offset);
 
     // Setup the configuration...
-    sm_config_set_in_pins(&c, pin_rx0);
-    sm_config_set_jmp_pin(&c, pin_crs);
+    sm_config_set_in_pins(&c, RMII_PIN_RX0);
+    sm_config_set_jmp_pin(&c, RMII_PIN_CRS);
 
     // Connect PIO to the pads (not technically needed for rx, but cleaner)
-    pio_gpio_init(pio, pin_rx0);
-    pio_gpio_init(pio, pin_rx0+1);
-    pio_gpio_init(pio, pin_crs);
+    pio_gpio_init(pio, RMII_PIN_RX0);
+    pio_gpio_init(pio, RMII_PIN_RX1);
+    pio_gpio_init(pio, RMII_PIN_CRS);
 
     // Set the pin direction to input at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_rx0, 2, false);     // input
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_crs, 1, false);     // input
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_RX0, 2, false);     // input
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_RX1, 1, false);     // input
 
     // Set direction, autopull, and shift sizes
     sm_config_set_in_shift(&c, true, true, 32);                      // shift right, autopush, 8 bits
@@ -93,8 +93,6 @@ static inline void mac_rx_unload(PIO pio, uint sm) {
 
 
 
-uint                rx_pin_rx0;
-uint                rx_pin_crs;
 
 PIO                 rx_pio = pio0;          // Which PIO are we running on for RX
 uint                rx_sm;                  // State machine for RX
@@ -377,7 +375,7 @@ void dma_isr() {
 
 
 void mac_rx_up(int speed) {
-    mac_rx_load(rx_pio, rx_sm, rx_pin_rx0, rx_pin_crs, speed);     // rx0=26, rx1=27, crs=28, 10MBPS
+    mac_rx_load(rx_pio, rx_sm, speed);     // rx0=26, rx1=27, crs=28, 10MBPS
 
     // TODO: duplicate code, need to find a nicer way...
     struct rx_frame *first = rx_get_free_frame();
@@ -420,10 +418,6 @@ void mac_rx_down() {
 
 
 void mac_rx_init(uint pin_rx0, uint pin_crs) {
-    // Keep the pins for later...
-    rx_pin_rx0 = pin_rx0;
-    rx_pin_crs = pin_crs;
-
     rx_sm = pio_claim_unused_sm(rx_pio, true);
 
 

@@ -9,7 +9,7 @@
  * 
  */
 
-void mac_tx_init(uint pin_tx0, uint pin_txen, uint pin_crs);
+void mac_tx_init();
 void mac_tx_teardown();
 void mac_tx_send(uint8_t *data, uint length);
 

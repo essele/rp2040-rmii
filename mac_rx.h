@@ -21,7 +21,7 @@ struct rx_frame {
     uint8_t             data[RX_MAX_BYTES];
 };
 
-void mac_rx_init(uint pin_rx0, uint pin_crs);
+void mac_rx_init();
 void mac_rx_up(int speed);
 void mac_rx_down();
 

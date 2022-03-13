@@ -19,23 +19,23 @@
 
 
 % c-sdk {
-static inline void mdio_program_init(PIO pio, uint sm, uint offset, uint pin_mdc, uint pin_mdio) {
+static inline void mdio_program_init(PIO pio, uint sm, uint offset) {
     pio_sm_config c = mdio_program_get_default_config(offset);
 
     // Map the state machine's OUT pin group to one pin, namely the `mdio pin`
     // parameter to this function, and the side and 
-    sm_config_set_out_pins(&c, pin_mdio, 1);
-    sm_config_set_set_pins(&c, pin_mdio, 1);
-    sm_config_set_sideset_pins(&c, pin_mdc);
-    sm_config_set_in_pins(&c, pin_mdio);
+    sm_config_set_out_pins(&c, RMII_PIN_MDIO, 1);
+    sm_config_set_set_pins(&c, RMII_PIN_MDIO, 1);
+    sm_config_set_sideset_pins(&c, RMII_PIN_MDC);
+    sm_config_set_in_pins(&c, RMII_PIN_MDIO);
 
     // Set this pin's GPIO function (connect PIO to the pad)
-    pio_gpio_init(pio, pin_mdio);
-    pio_gpio_init(pio, pin_mdc);
+    pio_gpio_init(pio, RMII_PIN_MDIO);
+    pio_gpio_init(pio, RMII_PIN_MDC);
 
     // Set the pin direction to output at the PIO
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_mdc, 1, true);        // output
-    pio_sm_set_consecutive_pindirs(pio, sm, pin_mdio, 1, false);      // input
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_MDC, 1, true);        // output
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_MDIO, 1, false);      // input
 
     // Set the mdio pin to be outputing a zero (so it pulls down when an output)
     pio_sm_set_pins(pio, sm, 0);
@@ -49,7 +49,7 @@ static inline void mdio_program_init(PIO pio, uint sm, uint offset, uint pin_mdc
     // Ideal would be /10 (100Mhz down to 10Mhz, then 4 cycles per bit = 2.5Mz)
     // But we use /12 (which results in 2.08Mhz at 100MHz)
     // And /18 (for the same result at 150MHz)
-#if (RMII_CLK_MHZ == 150)
+#if (RMII_SYS_MHZ == 150)
         sm_config_set_clkdiv(&c, 18); 
 #else
         sm_config_set_clkdiv(&c, 12); 
