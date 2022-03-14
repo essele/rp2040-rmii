@@ -53,5 +53,9 @@
 #define UDP_DEBUG                       LWIP_DBG_ON
 #endif
 
+//
+// So that we get out interp_ip_checksum function defined...
+//
+#include "checksum.h"
 
 #endif /* __LWIPOPTS_H__ */

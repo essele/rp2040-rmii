@@ -37,8 +37,8 @@ const static struct pio_prog rx_programs[] = {
 };
 #else
 const static struct pio_prog rx_programs[] = {
-    { PIO_PROG(mac_rx_10) },
-    { PIO_PROG(mac_rx_100) },
+    { PIO_PROG(mac_rx_10_100MHz) },
+    { PIO_PROG(mac_rx_100_100MHz) },
 };
 #endif
 
@@ -53,6 +53,8 @@ static inline int mac_rx_load(PIO pio, uint sm, int speed) {
 
     int index = (speed == 100) ? 1 : 0;
     struct pio_prog *prog = (struct pio_prog *)&rx_programs[index];
+
+    pio_encode_jmp(0);
 
     rx_prog = (pio_program_t *)prog->program;
     rx_offset = pio_add_program(pio, rx_prog);

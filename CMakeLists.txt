@@ -30,9 +30,6 @@ target_sources(rmii INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/debug.h
 )
 
-pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mdio.pio)
-pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_rx.pio)
-pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
 
 target_compile_definitions(rmii INTERFACE
   RMII_USE_LWIP=1
@@ -101,6 +98,10 @@ target_link_libraries(rmii INTERFACE
   pico_unique_id
   lwip
 )
+
+pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mdio.pio)
+pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_rx.pio)
+pico_generate_pio_header(rmii ${CMAKE_CURRENT_LIST_DIR}/mac_tx.pio)
 
 #------------------------------------------------------------------------------
 # Now see if we need to add the test target (only done if we are the top level

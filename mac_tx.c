@@ -37,10 +37,10 @@ const static struct pio_prog tx_programs[] = {
 };
 #else
 const static struct pio_prog tx_programs[] = {
-    { PIO_PROG(mac_tx_100hd) },
-    { PIO_PROG(mac_tx_100fd) },
-    { PIO_PROG(mac_tx_10hd) },
-    { PIO_PROG(mac_tx_10fd) },
+    { PIO_PROG(mac_tx_100hd_100MHz) },
+    { PIO_PROG(mac_tx_100fd_100MHz) },
+    { PIO_PROG(mac_tx_10hd_100MHz) },
+    { PIO_PROG(mac_tx_10fd_100MHz) },
 };
 #endif
 

@@ -1,6 +1,6 @@
 .define RMII_PIN_CLK 21     ;; TODO: this is a problem!
 
-.program mac_rx_100
+.program mac_rx_100_100MHz
 ; 
 ; So we have three pins: rx0 and rx1 as input, and crs as jmp
 ; We are running at 100Mhz, so we have two cycles per clock!
@@ -42,7 +42,7 @@ start:
 .wrap
 
 
-.program mac_rx_10
+.program mac_rx_10_100MHz
 ; 
 ; For 10M we stick at a /1 clkdiv, so we can synchronise with the
 ; clock, otherwise we're at random parts of the cycle

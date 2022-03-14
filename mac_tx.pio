@@ -8,7 +8,7 @@
 ;
 .define RMII_PIN_CLK 21     ;; TODO: this is a problem!
 
-.program mac_tx_100hd
+.program mac_tx_100hd_100MHz
 ; For half duplex we should check crs to ensure it's been low for
 ; at least 96 cycles before we try and send.
 .side_set 1 opt
@@ -37,7 +37,7 @@ output:
 .wrap
 
 
-.program mac_tx_100fd
+.program mac_tx_100fd_100MHz
 .side_set 1 opt
 
 .wrap_target
@@ -57,7 +57,7 @@ waitloop:
     jmp x-- waitloop [7]
 .wrap
 
-.program mac_tx_10hd
+.program mac_tx_10hd_100MHz
 ; For half duplex we should check crs to ensure it's been low for
 ; at least 96 bit cycles before we try and send, this is 960 cycles
 ; at our clock speed.
@@ -88,7 +88,7 @@ output:
 .wrap
 
 
-.program mac_tx_10fd
+.program mac_tx_10fd_100MHz
 .side_set 1
 
 .wrap_target

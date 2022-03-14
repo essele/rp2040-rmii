@@ -8,6 +8,7 @@
  * @copyright Copyright (c) 2022
  * 
  */
+#include <stdint.h>
 
-uint16_t interp_ip_checksum(uint8_t *data, int length);
+uint16_t interp_ip_checksum(const void *dataptr, int length);
 void interp_ip_checksum_init();

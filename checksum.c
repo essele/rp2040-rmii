@@ -40,10 +40,11 @@
  * @param length 
  * @return uint16_t 
  */
-uint16_t interp_ip_checksum(uint8_t *data, int length) {
+uint16_t interp_ip_checksum(const uint8_t *dataptr, int length) {
     // We will have 1, 2, or 3 bytes of unaligned data at the beginning
     // so we can use that to set initial accumulator values...
     //uint over = (uint32_t)data % 4;
+    uint8_t *data = (uint8_t *)dataptr;
     uint over = (uint32_t)data & 0x03;
 
     if (over == 3) {

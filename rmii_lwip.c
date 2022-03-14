@@ -278,6 +278,9 @@ struct netif *rmii_lwip_init() {
         clock_gpio_init(RMII_PIN_CLK, CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_CLK_SYS, 2);
 #endif
 
+    // Make sure interp0 is ready to handle checksums...
+    interp_ip_checksum_init();
+
     // We prioritise DMA... both read and write...
     //bus_ctrl_hw->priority |= (1 << 12) | (1 << 8);
 
