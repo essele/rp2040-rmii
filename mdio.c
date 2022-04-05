@@ -121,6 +121,7 @@ uint16_t mdio_read(int addr, int reg) {
     return (rc & 0xffff);
 }
 void mdio_send_read_cmd(int addr, int reg) {
+    //debug_printf("mdio_send_read_cmd: addr=%d reg=%d\r\n", addr, reg);
     uint32_t op = (1 << 30) | (2 << 28) | (addr << 23) | (reg << 18) | (0b11 << 16) | 0xffff;
 
     pio_sm_put(mdio_pio, mdio_sm, 0);        // Send all ones...
@@ -130,7 +131,12 @@ uint16_t mdio_get_read_result() {
     pio_sm_get(mdio_pio, mdio_sm);           // Read the dummy value
     return pio_sm_get(mdio_pio, mdio_sm) & 0xffff;
 }
-
+uint16_t Xmdio_get_read_result() {
+    pio_sm_get(mdio_pio, mdio_sm);           // Read the dummy value
+    int rc = pio_sm_get(mdio_pio, mdio_sm) & 0xffff;
+    debug_printf("mdio_get_read_result: %04x\r\n", rc);
+    return rc;
+}
 
 void mdio_write(int addr, int reg, uint16_t value) {
     uint32_t op = (1 << 30) | (1 << 28) | (addr << 23) | (reg << 18) | (0b10 << 16) | value;
@@ -255,20 +261,28 @@ int mdio_init() {
     pio_sm_get_blocking(mdio_pio, mdio_sm);
     pio_sm_get_blocking(mdio_pio, mdio_sm);
 
+    // Leave a gap here...
+    sleep_ms(100);
+
     // Now see if we can figure out which address the PHY is on, and which vendor and model
     // it is.
     int         i;
     uint32_t    rc;
     uint        vendor, model, revision;
+    while(1) {
     for (i=0; i < 32; i++) {
         rc = mdio_read(i, MDIO_PHY_ID2);
         if (rc != 0xffff) break;
     }
     if (i == 32) {
         debug_printf("No PHY detected, not starting rmii\r\n");
-        return 0;
+//        return 0;
+        sleep_ms(100);
+            continue;
     }
     mdio_addr = i;
+    break;
+    }
 
     vendor = rc >> 10;
     model = rc >> 4 & 0b111111;
@@ -292,8 +306,9 @@ int mdio_init() {
 
     // For the LAN8720 we want to force the mode by setting the SPECIAL_MODES
     // register and then soft resetting ... this will get us full autoneg.
+    // We also keep us at the same address, so we are consistent.
     if (mdio_type == TYPE_LAN8720) {
-        mdio_write(mdio_addr, MDIO_SPECIAL_MODES, RESERVED|ALL_CAPABLE|ADDRESS1);
+        mdio_write(mdio_addr, MDIO_SPECIAL_MODES, RESERVED|ALL_CAPABLE|mdio_addr);
         mdio_write(mdio_addr, MDIO_BASIC_CONTROL, SOFT_RESET); 
 
         // We don't seem to need any delay after a soft reset, but probably worth

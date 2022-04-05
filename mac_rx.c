@@ -51,10 +51,10 @@ pio_program_t *rx_prog;
 static inline int mac_rx_load(PIO pio, uint sm, int speed) {
     pio_sm_config c;
 
+    debug_printf("Loading rx_pio for speed=%d\r\n", speed);
+
     int index = (speed == 100) ? 1 : 0;
     struct pio_prog *prog = (struct pio_prog *)&rx_programs[index];
-
-    pio_encode_jmp(0);
 
     rx_prog = (pio_program_t *)prog->program;
     rx_offset = pio_add_program(pio, rx_prog);
@@ -71,7 +71,7 @@ static inline int mac_rx_load(PIO pio, uint sm, int speed) {
 
     // Set the pin direction to input at the PIO
     pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_RX0, 2, false);     // input
-    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_RX1, 1, false);     // input
+    pio_sm_set_consecutive_pindirs(pio, sm, RMII_PIN_CRS, 1, false);     // input
 
     // Set direction, autopull, and shift sizes
     sm_config_set_in_shift(&c, true, true, 32);                      // shift right, autopush, 8 bits

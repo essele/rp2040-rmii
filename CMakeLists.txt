@@ -38,20 +38,20 @@ target_compile_definitions(rmii INTERFACE
   # What speed to we expect to be running the processor at, so that
   # we can adjust the PIO code and clock generation accordingly
   #
-  RMII_SYS_MHZ=150
+#  RMII_SYS_MHZ=150
 
   #
   # Define the pins we're going to use
   #
-  RMII_PIN_CLK=21
-  RMII_PIN_MDC=18
-  RMII_PIN_MDIO=19
-  RMII_PIN_RX0=26
-  RMII_PIN_RX1=27
-  RMII_PIN_CRS=28
-  RMII_PIN_TX0=13
-  RMII_PIN_TX1=14
-  RMII_PIN_TXEN=15
+#  RMII_PIN_CLK=21
+#  RMII_PIN_MDC=18
+#  RMII_PIN_MDIO=19
+#  RMII_PIN_RX0=26
+#  RMII_PIN_RX1=27
+#  RMII_PIN_CRS=28
+#  RMII_PIN_TX0=13
+#  RMII_PIN_TX1=14
+#  RMII_PIN_TXEN=15
 
   #
   # Main debugging on/off switch (if true), this turns all the others off
