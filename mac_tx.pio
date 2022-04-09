@@ -25,7 +25,7 @@ data_wait:
     jmp !x, data_wait           ; loop if nothing in fifo 
 
     out x, 32                   ; number of bit pairs
-    wait 0 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
+    wait 1 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
 
 output:
     out pins, 2 side 1          ; data out and txen (side) high
@@ -42,7 +42,7 @@ output:
 
 .wrap_target
     out x, 32                   ; number of bit pairs
-    wait 0 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
+    wait 1 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
 
 output:
     out pins, 2 side 1          ; data out and txen (side) high
@@ -76,7 +76,7 @@ data_wait:
     jmp !x, data_wait           side 0  ; loop if nothing in fifo 
 
     out x, 32                   side 0  ; number of bit pairs
-    wait 0 gpio RMII_PIN_CLK    side 0  ; make sure we're on the right clock edge
+    wait 1 gpio RMII_PIN_CLK    side 0  ; make sure we're on the right clock edge
 
 output:
     out pins, 2 side 1 [9]      ; data out and txen (side) high
@@ -93,7 +93,7 @@ output:
 
 .wrap_target
     out x, 32                   side 0  ; number of bit pairs
-    wait 0 gpio RMII_PIN_CLK    side 0  ; make sure we're on the right clock edge
+    wait 1 gpio RMII_PIN_CLK    side 0  ; make sure we're on the right clock edge
 
 output:
     out pins, 2 [9]             side 1  ; data out and txen (side) high
@@ -132,7 +132,7 @@ data_wait:
     jmp !x, data_wait           ; loop if nothing in fifo 
 
     out x, 32                   ; number of bit pairs
-    wait 0 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
+    wait 1 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
 
 output:
     out pins, 2 side 1          ; data out and txen (side) high
@@ -149,7 +149,7 @@ output:
 
 .wrap_target
     out x, 32                   ; number of bit pairs
-    wait 0 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
+    wait 1 gpio RMII_PIN_CLK    ; make sure we're on the right clock edge
 
 output:
     out pins, 2 side 1          ; data out and txen (side) high

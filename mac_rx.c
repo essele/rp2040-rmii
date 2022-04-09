@@ -118,7 +118,7 @@ struct rx_stats rxstats;
 #define ETHER_CHECKSUM3  0x4710bb9c                 // three trailing zeros (-1 on length)
 
 void print_rx_stats() {
-    printf("pkts=%d oob=%d fcs=%d big=%d\r\n", rxstats.packets, rxstats.oob, rxstats.fcs, rxstats.big);
+    debug_printf("pkts=%d oob=%d fcs=%d big=%d\r\n", rxstats.packets, rxstats.oob, rxstats.fcs, rxstats.big);
 }
 
 
@@ -372,7 +372,7 @@ void dma_isr() {
     }
 
     restore_interrupts(save);
-    printf("DMA OVERRUN IRQ: type = %s\r\n", type == 1 ? "AAARRRGH" : "NORMAL");
+    debug_printf("DMA OVERRUN IRQ: type = %s\r\n", type == 1 ? "AAARRRGH" : "NORMAL");
 }
 
 
