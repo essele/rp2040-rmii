@@ -23,6 +23,7 @@
 #define LWIP_UDP                        1
 #define LWIP_TCP                        1
 #define ETH_PAD_SIZE                    0
+#define LWIP_NETIF_STATUS_CALLBACK	1
 #define LWIP_IP_ACCEPT_UDP_PORT(p)      ((p) == PP_NTOHS(67))
 
 #define TCP_MSS                         (1500 /*mtu*/ - 20 /*iphdr*/ - 20 /*tcphhr*/)

@@ -181,7 +181,7 @@ void rmii_lwip_poll(struct netif* netif) {
         cp = (rmii_pbuf_t *)LWIP_MEMPOOL_ALLOC(RX_POOL);
         if (!cp) {
             rx_add_to_free_list(frame);
-            printf("PBUF (CUSTOM) allocation failed\r\n");
+            debug_printf("PBUF (CUSTOM) allocation failed\r\n");
             return;
         }
         cp->p.custom_free_function = rmii_pbuf_free;
@@ -189,7 +189,7 @@ void rmii_lwip_poll(struct netif* netif) {
 
         p = pbuf_alloced_custom(PBUF_RAW, frame->length, PBUF_REF, &cp->p, frame->data, RX_MAX_BYTES);
         if (!p) {
-            printf("PBUF ERROR\r\n");
+            debug_printf("PBUF ERROR\r\n");
             panic("pbuf failed\r\n");   
         }
 /*
@@ -223,6 +223,7 @@ void rmii_lwip_poll(struct netif* netif) {
 
         // Pass the frame into lwip
         if (netif->input(p, netif) != ERR_OK) {
+            debug_printf("ethernetif_input: IP input error\r\n");
             LWIP_DEBUGF(NETIF_DEBUG, ("ethernetif_input: IP input error\n"));
             pbuf_free(p);
             p = NULL;

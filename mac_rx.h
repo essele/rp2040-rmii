@@ -9,6 +9,11 @@
  * 
  */
 
+#ifndef __MAC_RX_H
+#define __MAC_RX_H
+
+#include <stdint.h>
+
 //#define RX_MAX_BYTES    1446              // for testing large packet handling
 #define RX_MAX_BYTES    1600
 #define RX_FRAME_COUNT  8
@@ -30,3 +35,5 @@ void rx_add_to_free_list(struct rx_frame *frame);
 struct rx_frame *rx_get_ready_frame();
 
 void print_rx_stats();
+
+#endif

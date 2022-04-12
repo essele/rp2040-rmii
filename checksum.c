@@ -50,11 +50,11 @@ uint16_t interp_ip_checksum(const uint8_t *dataptr, int length) {
     if (over == 3) {
             interp0->accum[0] = *data++ << 8;
             length -= 1;
-    } else if( over == 2) {
+    } else if (over == 2) {
             interp0->accum[0] = *(uint16_t *)data;
             data += 2;
             length -= 2;
-    } else if(over == 1) {
+    } else if (over == 1) {
             interp0->accum[0] = *data++ << 8;
             interp0->add_raw[0] = *(uint16_t *)data;
             data += 2;
@@ -75,7 +75,7 @@ uint16_t interp_ip_checksum(const uint8_t *dataptr, int length) {
         words -= 4;
     }
 
-    // Now we can go back to an 8 but pointer and cover the ending 1, 2, or
+    // Now we can go back to an 8 bit pointer and cover the ending 1, 2, or
     // 3 bytes in a simlar way to the start...
     data = (uint8_t *)ptr;
     if (length & 2) {
@@ -83,7 +83,8 @@ uint16_t interp_ip_checksum(const uint8_t *dataptr, int length) {
         data += 2;
     }
     if (length & 1) {
-        interp0_hw->add_raw[0] = *data << 8;
+//        interp0_hw->add_raw[0] = *data << 8;
+        interp0_hw->add_raw[0] = *data;
     }    
 
     // base2 is a free add into result2 at this point
@@ -100,7 +101,7 @@ uint16_t interp_ip_checksum(const uint8_t *dataptr, int length) {
 //        rc = SWAP_BYTES_IN_WORD(rc);
 //    }
 
-    uint16_t rc = (over & 1) ? SWAP_BYTES_IN_WORD(rc) : res;
+    uint16_t rc = (over & 1) ? SWAP_BYTES_IN_WORD(res) : res;
 
     return (uint16_t)rc;
 }
