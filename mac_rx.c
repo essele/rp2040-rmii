@@ -23,9 +23,6 @@
 #include "mac_rx.h"
 #include "pio_utils.h"
 
-static uint tx_offset;          // so we know where the program loaded
-pio_program_t *tx_prog;         // so we know which one it was
-
 //
 // We're going to do the initialisation of the PIO RX code in here so we need a way to select
 // from the different programs needed for different situations...
@@ -83,6 +80,8 @@ static inline int mac_rx_load(PIO pio, uint sm, int speed) {
 
     // Load our configuration, and get ready to start...
     pio_sm_init(pio, sm, rx_offset, &c);
+
+    return 0;       // TODO: this can't really go wrong?
 }
 
 static inline void mac_rx_unload(PIO pio, uint sm) {
@@ -251,7 +250,6 @@ struct rx_frame *rx_get_ready_frame() {
 //
 void __time_critical_func(pio_rx_isr)() {
     int         overrun = 0;
-    uint32_t    checksum;
 
     // First disable the DMA irq from happening when we abort...
     dma_channel_set_irq0_enabled(rx_dma_chan, false);

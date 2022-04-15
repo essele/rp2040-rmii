@@ -35,9 +35,6 @@
 #include "lwip/dhcp.h"
 #include "lwip/prot/dhcp.h"
 
-static uint8_t fake_mac[ 6 ] = {
-    0xa4,0xdd,0x7b,0xb6,0xf2,0x1d
-};
 
 // Specific structure for our interface
 struct ethernetif {
@@ -53,25 +50,12 @@ struct ethernetif {
  */
 static err_t rmii_linkoutput(struct netif *netif, struct pbuf *p)
 {
-    struct pbuf *q;
-
 #if ETH_PAD_SIZE
     pbuf_remove_header(p, ETH_PAD_SIZE); /* drop the padding word */
 #endif
-/*
-    // For the moment we'll just pull all the pbufs together into
-    // a new buffer and send that
-    uint8_t buffer[1600];
 
-    uint len = 0;
-    for(q=p; q != NULL; q=q->next) {
-        memcpy(&buffer[len], q->payload, q->len);
-        len += q->len;
-    }
-    if (len < 60) len = 60;
-    mac_tx_send(buffer, len);
-*/
     mac_tx_send_pbuf(p);
+
 #if ETH_PAD_SIZE
     pbuf_add_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
 #endif
@@ -81,8 +65,6 @@ static err_t rmii_linkoutput(struct netif *netif, struct pbuf *p)
 
 err_t ethernetif_init(struct netif *netif)
 {
-  struct ethernetif *ethernetif;
-
   LWIP_ASSERT("netif != NULL", (netif != NULL));
 
 #if LWIP_NETIF_HOSTNAME
@@ -173,7 +155,6 @@ void rmii_pbuf_free(struct pbuf *p) {
 void rmii_lwip_poll(struct netif* netif) {
     struct rx_frame *frame;
     struct pbuf *p = NULL;
-    struct pbuf *q;
 
     rmii_pbuf_t *cp;
     

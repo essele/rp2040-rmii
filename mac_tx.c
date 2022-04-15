@@ -79,6 +79,8 @@ static inline int mac_tx_load(PIO pio, uint sm, int speed, int duplex) {
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
     // Load our configuration, and get ready to start...
     pio_sm_init(pio, sm, tx_offset, &c);
+
+    return 0;       // TODO: can't go wrong!
 }
 
 static inline void mac_tx_unload(PIO pio, uint sm) {
@@ -257,7 +259,7 @@ void mac_tx_send_pbuf(struct pbuf *p) {
     uint length = 0;
     for(q=p; q != NULL; q=q->next) {
         // Make the the previous DMA has finished before we start a new one...
-        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+        while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents();
 
         if (length + q->len > MAX_ETHERNET_BYTES) {
             debug_printf("Attempted send of large packet (%d bytes), discarding\r\n", length);
@@ -288,17 +290,17 @@ void mac_tx_send_pbuf(struct pbuf *p) {
     outgoing->dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
 
     // Fill in the FCS values
-    char *ptr = &outgoing->data[length];
+    uint8_t *ptr = &outgoing->data[length];
     *ptr++ = (uint8_t)(fcs >> 0);
     *ptr++ = (uint8_t)(fcs >> 8);
     *ptr++ = (uint8_t)(fcs >> 16);
     *ptr++ = (uint8_t)(fcs >> 24);
 
     // Now wait for (it will be done) the copy DMA to complete...
-    while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+    while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents();
 
     // Now check to ensure the previous packet send has completed...
-    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
+    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents();
 
     // TODO: potential of the link going down before we get here
     // so SM will be gone, we shouldn't trigger in that case a it
@@ -368,17 +370,17 @@ void mac_tx_send(uint8_t *data, uint length) {
     outgoing->dibits = (data_bytes * 4) - 1;                         // -1 for the x-- loop
 
     // Fill in the FCS values
-    char *ptr = &outgoing->data[length];
+    uint8_t *ptr = &outgoing->data[length];
     *ptr++ = (uint8_t)(fcs >> 0);
     *ptr++ = (uint8_t)(fcs >> 8);
     *ptr++ = (uint8_t)(fcs >> 16);
     *ptr++ = (uint8_t)(fcs >> 24);
 
     // Now wait for (it will be done) the copy DMA to complete...
-    while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents;
+    while(dma_channel_is_busy(tx_copy_chan)) tight_loop_contents();
 
     // Now check to ensure the previous packet send has completed...
-    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents;
+    while(dma_channel_is_busy(tx_dma_chan)) tight_loop_contents();
 
     // TODO: potential of the link going down before we get here
     // so SM will be gone, we shouldn't trigger in that case a it

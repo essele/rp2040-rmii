@@ -140,19 +140,10 @@ uint16_t Xmdio_get_read_result() {
 
 void mdio_write(int addr, int reg, uint16_t value) {
     uint32_t op = (1 << 30) | (1 << 28) | (addr << 23) | (reg << 18) | (0b10 << 16) | value;
-    uint32_t rc;
     pio_sm_put_blocking(mdio_pio, mdio_sm, 0);        // Send all ones...
     pio_sm_put_blocking(mdio_pio, mdio_sm, ~op);      // Send the code (inverted because it's pindirs)
     pio_sm_get_blocking(mdio_pio, mdio_sm);           // Read the dummy value
-    rc = pio_sm_get_blocking(mdio_pio, mdio_sm);
-}
-
-
-// Do as little as possible in the timer task, so just trigger a low priority
-// IRQ to actually do the work.
-static int64_t mdio_timer_task(__unused alarm_id_t id, __unused void *user_data) {
-    irq_set_pending(MDIO_LOW_PRIORITY_IRQ);
-    return MDIO_TASK_INTERVAL_US;
+    pio_sm_get_blocking(mdio_pio, mdio_sm);
 }
 
 // See if we have a response to our previous query and process it. If not just send
@@ -217,15 +208,6 @@ static int mdio_handler() {
 }
 
 /**
- * @brief The ISR just calls the handler and throws away the result
- * 
- * TODO: how do we trigger events?
- */
-static void mdio_isr() {
-    mdio_handler();
-}
-
-/**
  * @brief Polling version of MDIO machine rather than IRQ's
  *
  */
@@ -268,7 +250,7 @@ int mdio_init() {
     // it is.
     int         i;
     uint32_t    rc;
-    uint        vendor, model, revision;
+    uint        revision;
     while(1) {
     for (i=0; i < 32; i++) {
         rc = mdio_read(i, MDIO_PHY_ID2);
@@ -284,8 +266,8 @@ int mdio_init() {
     break;
     }
 
-    vendor = rc >> 10;
-    model = rc >> 4 & 0b111111;
+    //vendor = rc >> 10;
+    //model = rc >> 4 & 0b111111;
     revision = rc & 0b1111;
 
     // Now see if we recognise the phy... ignoring the revision
@@ -326,4 +308,6 @@ int mdio_init() {
 
     // Send the first read command (which the ISR or polling system will respond to)
     mdio_send_read_cmd(mdio_addr, MDIO_BASIC_STATUS);
+
+    return 0;
 }
